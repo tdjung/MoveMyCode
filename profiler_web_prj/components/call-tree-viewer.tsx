@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { ChevronDown, ChevronRight, Clock, Cpu, Search, Filter, BarChart3, GitBranch } from 'lucide-react';
 import { CachegrindData, CallInfo } from '@/types/profiler';
 import { cn } from '@/lib/utils';
+import { CallTreeSearchEngine, debounce } from '@/lib/call-tree-search';
+import { EntryPointMatcher } from '@/lib/entry-point-matcher';
 
 interface CallTreeNode {
   id: string;
@@ -28,9 +30,17 @@ export function CallTreeViewer({ data }: CallTreeViewerProps) {
   const [customDepth, setCustomDepth] = useState(1);
   const [useCustomDepth, setUseCustomDepth] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [selectedFunction, setSelectedFunction] = useState<CallTreeNode | null>(null);
   const [entryPoint, setEntryPoint] = useState('');
+  const [entryPointInput, setEntryPointInput] = useState('');
+  const [searchResults, setSearchResults] = useState<Set<CallTreeNode> | null>(null);
+  const [manualSearchMode, setManualSearchMode] = useState(true); // Default to manual mode for better performance
+  
+  // Initialize search engine and entry point matcher
+  const searchEngine = useMemo(() => new CallTreeSearchEngine(), []);
+  const entryPointMatcher = useMemo(() => new EntryPointMatcher(), []);
   
   // Check if we have cycles data or need to use instructions
   const hasCycles = data.summaryTotals?.Cy !== undefined;
@@ -192,41 +202,6 @@ export function CallTreeViewer({ data }: CallTreeViewerProps) {
       console.error('Error updating total cycles for nodes:', error);
     }
 
-    // If we have an entry point specified, filter to show only that subtree
-    if (entryPoint) {
-      const trimmedEntry = entryPoint.trim().toLowerCase();
-      const entryNode = Array.from(nodeMap.values()).find(node => {
-        // Match by function name (case-insensitive)
-        if (node.functionName.toLowerCase() === trimmedEntry) return true;
-        
-        // Match by exact PC start
-        if (node.pcStart === entryPoint.trim()) return true;
-        
-        // Match if entry point is within the PC range
-        if (node.pcStart && node.pcEnd && entryPoint.trim().startsWith('0x')) {
-          const entryAddr = parseInt(entryPoint.trim(), 16);
-          const startAddr = parseInt(node.pcStart, 16);
-          const endAddr = parseInt(node.pcEnd, 16);
-          if (!isNaN(entryAddr) && !isNaN(startAddr) && !isNaN(endAddr)) {
-            return entryAddr >= startAddr && entryAddr <= endAddr;
-          }
-        }
-        
-        return false;
-      });
-      
-      if (entryNode) {
-        // Auto-expand the entry node if it has children
-        if (entryNode.children.length > 0 && !expandedNodes.has(entryNode.id)) {
-          setExpandedNodes(new Set([entryNode.id]));
-        }
-        return {
-          callTreeData: [entryNode],
-          nodeMap
-        };
-      }
-    }
-
     // Set some nodes as expanded by default
     if (rootNodes.length > 0 && expandedNodes.size === 0) {
       setExpandedNodes(new Set([rootNodes[0].id]));
@@ -236,7 +211,59 @@ export function CallTreeViewer({ data }: CallTreeViewerProps) {
       callTreeData: rootNodes.length > 0 ? rootNodes : Array.from(nodeMap.values()),
       nodeMap
     };
-  }, [data, entryPoint]);
+  }, [data]);
+  
+  // Build search index from ALL nodes, not just root nodes
+  useEffect(() => {
+    try {
+      searchEngine.buildIndex(Array.from(nodeMap.values()));
+    } catch (error) {
+      console.error('Error building search index:', error);
+    }
+  }, [nodeMap, searchEngine]);
+  
+  // Build entry point index when node map changes
+  useEffect(() => {
+    try {
+      entryPointMatcher.buildIndex(nodeMap);
+    } catch (error) {
+      console.error('Error building entry point index:', error);
+    }
+  }, [nodeMap, entryPointMatcher]);
+  
+  // Handle manual entry point
+  const handleManualEntryPoint = useCallback(() => {
+    setEntryPoint(entryPointInput);
+  }, [entryPointInput]);
+
+  // Optimized entry point filtering
+  const filteredTree = useMemo(() => {
+    if (!entryPoint || !entryPoint.trim()) return callTreeData;
+    
+    const entryNode = entryPointMatcher.findEntryNode(entryPoint);
+    
+    if (entryNode) {
+      // Auto-expand the entry node if it has children
+      if (entryNode.children.length > 0 && !expandedNodes.has(entryNode.id)) {
+        setTimeout(() => {
+          setExpandedNodes(prev => new Set([...prev, entryNode.id]));
+        }, 100);
+      }
+      return [entryNode];
+    }
+    
+    return callTreeData;
+  }, [entryPoint, callTreeData, entryPointMatcher, expandedNodes]);
+  
+  // Handle entry point input based on mode
+  useEffect(() => {
+    if (!manualSearchMode) {
+      const timer = setTimeout(() => {
+        setEntryPoint(entryPointInput);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [entryPointInput, manualSearchMode]);
 
   const toggleExpand = (nodeId: string) => {
     const newExpanded = new Set(expandedNodes);
@@ -257,37 +284,56 @@ export function CallTreeViewer({ data }: CallTreeViewerProps) {
     return 'bg-white border-gray-200';
   };
 
-  // Check if node or any of its descendants match the search term
-  const nodeMatchesSearch = (node: CallTreeNode, term: string): boolean => {
-    if (!term || term.trim() === '') return true;
-    if (!node) return false;
-    
+  // Manual search function
+  const performSearch = useCallback((term: string) => {
     try {
-      const lowerTerm = term.toLowerCase();
-      if (node.functionName && typeof node.functionName === 'string' && 
-          node.functionName.toLowerCase().includes(lowerTerm)) {
-        return true;
+      if (!term || term.trim() === '') {
+        setSearchResults(null);
+        return;
       }
       
-      // Check if any child matches - with additional safety checks
-      if (node.children && Array.isArray(node.children) && node.children.length > 0) {
-        return node.children.some(child => {
-          if (!child || typeof child !== 'object') return false;
-          try {
-            return nodeMatchesSearch(child, term);
-          } catch (error) {
-            console.warn('Error checking child node:', error);
-            return false;
-          }
+      const results = searchEngine.search(term);
+      setSearchResults(results);
+      
+      // Auto-expand nodes to show search results
+      if (results.size > 0 && results.size < 50) { // Limit expansion for performance
+        const ancestorsToExpand = searchEngine.getAncestorsToExpand(results, Array.from(nodeMap.values()));
+        setExpandedNodes(prev => {
+          const newExpanded = new Set(prev);
+          ancestorsToExpand.forEach(id => newExpanded.add(id));
+          return newExpanded;
         });
       }
-      
-      return false;
     } catch (error) {
-      console.warn('Error in nodeMatchesSearch:', error);
-      return false;
+      console.error('Error during search:', error);
+      setSearchResults(null);
     }
-  };
+  }, [searchEngine, nodeMap]);
+
+  // Debounced search for auto mode
+  const debouncedSearch = useMemo(
+    () => debounce((term: string) => performSearch(term), 300),
+    [performSearch]
+  );
+  
+  // Handle search based on mode
+  useEffect(() => {
+    if (!manualSearchMode) {
+      debouncedSearch(searchInput);
+    }
+  }, [searchInput, debouncedSearch, manualSearchMode]);
+  
+  // Handle manual search
+  const handleManualSearch = useCallback(() => {
+    setSearchTerm(searchInput);
+    performSearch(searchInput);
+  }, [searchInput, performSearch]);
+  
+  // Check if node matches search results
+  const nodeMatchesSearch = useCallback((node: CallTreeNode): boolean => {
+    if (!searchResults) return true;
+    return searchResults.has(node);
+  }, [searchResults]);
 
   const TreeNode = ({ node, depth = 0, maxDepth = filterDepth }: { 
     node: CallTreeNode; 
@@ -296,12 +342,12 @@ export function CallTreeViewer({ data }: CallTreeViewerProps) {
   }) => {
     if (depth > maxDepth) return null;
     
-    const nodeMatches = nodeMatchesSearch(node, searchTerm);
-    if (!nodeMatches) return null;
+    const nodeMatches = nodeMatchesSearch(node);
+    if (!nodeMatches && searchResults) return null;
     
     const hasChildren = node.children && Array.isArray(node.children) && node.children.length > 0;
-    // Auto-expand when searching and node has matching children
-    const isExpanded = expandedNodes.has(node.id) || (searchTerm && hasChildren && node.children.some(child => child && nodeMatchesSearch(child, searchTerm)));
+    // Keep node expanded if it's in expanded set
+    const isExpanded = expandedNodes.has(node.id);
 
     return (
       <div className="select-none">
@@ -514,10 +560,23 @@ export function CallTreeViewer({ data }: CallTreeViewerProps) {
             <input
               type="text"
               placeholder="Search function..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && manualSearchMode) {
+                  handleManualSearch();
+                }
+              }}
               className="px-3 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            {manualSearchMode && (
+              <button
+                onClick={handleManualSearch}
+                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+              >
+                Search
+              </button>
+            )}
           </div>
           
           <div className="flex items-center gap-2">
@@ -525,10 +584,35 @@ export function CallTreeViewer({ data }: CallTreeViewerProps) {
             <input
               type="text"
               placeholder="e.g., main or 0x8000"
-              value={entryPoint}
-              onChange={(e) => setEntryPoint(e.target.value)}
+              value={entryPointInput}
+              onChange={(e) => setEntryPointInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && manualSearchMode) {
+                  handleManualEntryPoint();
+                }
+              }}
               className="px-3 py-1 border rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-40"
             />
+            {manualSearchMode && (
+              <button
+                onClick={handleManualEntryPoint}
+                className="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+              >
+                Set
+              </button>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={!manualSearchMode}
+                onChange={(e) => setManualSearchMode(!e.target.checked)}
+                className="rounded"
+              />
+              <span>Real-time search</span>
+            </label>
           </div>
           
           <div className="flex items-center gap-2">
@@ -610,19 +694,23 @@ export function CallTreeViewer({ data }: CallTreeViewerProps) {
               <div>
                 <h3 className="text-lg font-semibold mb-4">Function Call Tree</h3>
                 <div className="border rounded-lg p-4 bg-white">
-                  {callTreeData.length === 0 ? (
+                  {filteredTree.length === 0 ? (
                     <div className="text-center py-8">
                       <GitBranch className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500 mb-2">No call tree data available</p>
+                      <p className="text-gray-500 mb-2">
+                        {entryPoint 
+                          ? `No function found for entry point "${entryPoint}"`
+                          : "No call tree data available"}
+                      </p>
                       <p className="text-sm text-gray-400">
-                        Make sure your profiling data includes call information (cfi, cfn, calls)
+                        {entryPoint
+                          ? "Try a different entry point or clear the filter"
+                          : "Make sure your profiling data includes call information (cfi, cfn, calls)"}
                       </p>
                     </div>
                   ) : (
                     (() => {
-                      const filteredNodes = callTreeData.filter(node => nodeMatchesSearch(node, searchTerm));
-                      
-                      if (searchTerm && filteredNodes.length === 0) {
+                      if (searchResults && searchResults.size === 0 && searchTerm) {
                         return (
                           <div className="text-center py-8">
                             <Search className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -634,7 +722,7 @@ export function CallTreeViewer({ data }: CallTreeViewerProps) {
                         );
                       }
                       
-                      return filteredNodes.map(node => (
+                      return filteredTree.map(node => (
                         <TreeNode key={node.id} node={node} />
                       ));
                     })()
@@ -666,7 +754,7 @@ export function CallTreeViewer({ data }: CallTreeViewerProps) {
             <div className="border rounded-lg p-4 bg-gray-50">
               <h4 className="font-semibold text-gray-900 mb-3">Summary Statistics</h4>
               <div className="space-y-2 text-sm">
-                <div><span className="font-medium">Root Functions:</span> {callTreeData.length}</div>
+                <div><span className="font-medium">Root Functions:</span> {filteredTree.length}</div>
                 <div><span className="font-medium">Total Functions:</span> {nodeMap.size}</div>
                 <div><span className="font-medium">Total {metricNameCapitalized}:</span> {(data.summaryTotals?.Cy || data.summaryTotals?.Ir || 0).toLocaleString()}</div>
                 <div><span className="font-medium">Total Calls:</span> {Array.from(nodeMap.values()).reduce((sum, n) => sum + (n.calls?.length || 0), 0)}</div>

@@ -16,6 +16,7 @@ export interface CachegrindData {
 export interface FileCoverage {
   sourceFilePath: string;
   totalLines: number;
+  compiledLines: number;
   coveredLines: number;
   coveragePercentage: number;
   coveredLineNumbers: number[];

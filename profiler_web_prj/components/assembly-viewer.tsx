@@ -20,6 +20,7 @@ interface AssemblyViewerProps {
   onPcClick?: (pc: string) => void;
   isDarkTheme?: boolean;
   syntaxOnlyMode?: boolean;
+  eventAlignLeft?: boolean;
 }
 
 // Assembly cache to avoid redundant objdump calls
@@ -35,7 +36,8 @@ export function AssemblyViewer({
   highlightedLine,
   onPcClick,
   isDarkTheme = true,
-  syntaxOnlyMode = false
+  syntaxOnlyMode = false,
+  eventAlignLeft = false
 }: AssemblyViewerProps) {
   const [assemblyData, setAssemblyData] = useState<AssemblyData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -70,7 +72,8 @@ export function AssemblyViewer({
       setError(null);
 
       try {
-        const data = await getAssemblyForFunction(objectFile, pcData);
+        const objdumpCommand = localStorage.getItem('profiler-objdump-command') || 'objdump';
+        const data = await getAssemblyForFunction(objectFile, pcData, objdumpCommand);
         setAssemblyData(data);
         
         // Cache the result
@@ -161,19 +164,39 @@ export function AssemblyViewer({
               <th className={cn(
                 "text-left px-4 py-2 text-xs font-medium",
                 isDarkTheme ? "text-gray-400" : "text-gray-600"
-              )}>Address</th>
+              )} style={{ width: '100px' }}>Address</th>
+              {eventAlignLeft && (
+                <>
+                  {Array.from(selectedEvents).map(event => (
+                    <th key={event} className={cn(
+                      "px-3 py-2 text-xs font-medium whitespace-nowrap text-right",
+                      isDarkTheme ? "text-gray-400" : "text-gray-600"
+                    )}
+                    style={{ width: '80px' }}
+                    >
+                      {event}
+                    </th>
+                  ))}
+                </>
+              )}
               <th className={cn(
                 "text-left px-4 py-2 text-xs font-medium",
                 isDarkTheme ? "text-gray-400" : "text-gray-600"
-              )}>Instruction</th>
-              {Array.from(selectedEvents).map(event => (
-                <th key={event} className={cn(
-                  "text-center px-2 py-2 text-xs font-medium min-w-[60px]",
-                  isDarkTheme ? "text-gray-400" : "text-gray-600"
-                )}>
-                  {event}
-                </th>
-              ))}
+              )} style={{ width: '100%' }}>Instruction</th>
+              {!eventAlignLeft && (
+                <>
+                  {Array.from(selectedEvents).map(event => (
+                    <th key={event} className={cn(
+                      "px-3 py-2 text-xs font-medium whitespace-nowrap text-right",
+                      isDarkTheme ? "text-gray-400" : "text-gray-600"
+                    )}
+                    style={{ width: '80px' }}
+                    >
+                      {event}
+                    </th>
+                  ))}
+                </>
+              )}
             </tr>
           </thead>
         )}
@@ -207,15 +230,39 @@ export function AssemblyViewer({
                 }}
               >
                 <td className={cn(
-                  "px-4 py-1 text-xs",
+                  "px-4 py-1 text-xs cursor-pointer hover:underline",
                   isDarkTheme ? (
                     isExecuted ? "text-blue-400" : "text-gray-600"
                   ) : (
                     isExecuted ? "text-blue-600" : "text-gray-400"
                   )
-                )}>
+                )}
+                style={{ width: '100px' }}
+                onClick={() => onPcClick && onPcClick(inst.pc)}
+                >
                   {inst.pc}
                 </td>
+                
+                {/* Event columns when aligned left */}
+                {eventAlignLeft && (
+                  <>
+                    {Array.from(selectedEvents).map(event => (
+                      <td key={event} className={cn(
+                        "px-3 py-1 text-xs whitespace-nowrap text-right font-mono",
+                        isDarkTheme ? (
+                          isExecuted ? "text-gray-300" : "text-gray-600"
+                        ) : (
+                          isExecuted ? "text-gray-700" : "text-gray-400"
+                        )
+                      )}
+                      style={{ width: '80px' }}
+                      >
+                        {inst.events?.[event] ? inst.events[event].toLocaleString() : '-'}
+                      </td>
+                    ))}
+                  </>
+                )}
+                
                 <td className={cn(
                   "px-4 py-1",
                   isDarkTheme ? (
@@ -223,21 +270,29 @@ export function AssemblyViewer({
                   ) : (
                     isExecuted ? "text-gray-900" : "text-gray-500"
                   )
-                )}>
+                )} style={{ width: '100%' }}>
                   <pre className="m-0 p-0">{inst.instruction}</pre>
                 </td>
-                {Array.from(selectedEvents).map(event => (
-                  <td key={event} className={cn(
-                    "px-2 py-1 text-center text-xs min-w-[60px]",
-                    isDarkTheme ? (
-                      isExecuted ? "text-gray-300" : "text-gray-600"
-                    ) : (
-                      isExecuted ? "text-gray-700" : "text-gray-400"
-                    )
-                  )}>
-                    {inst.events?.[event] ? inst.events[event].toLocaleString() : '-'}
-                  </td>
-                ))}
+                
+                {/* Event columns when aligned right */}
+                {!eventAlignLeft && (
+                  <>
+                    {Array.from(selectedEvents).map(event => (
+                      <td key={event} className={cn(
+                        "px-3 py-1 text-xs whitespace-nowrap text-right font-mono",
+                        isDarkTheme ? (
+                          isExecuted ? "text-gray-300" : "text-gray-600"
+                        ) : (
+                          isExecuted ? "text-gray-700" : "text-gray-400"
+                        )
+                      )}
+                      style={{ width: '80px' }}
+                      >
+                        {inst.events?.[event] ? inst.events[event].toLocaleString() : '-'}
+                      </td>
+                    ))}
+                  </>
+                )}
               </tr>
             );
           })}

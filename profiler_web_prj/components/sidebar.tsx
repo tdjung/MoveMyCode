@@ -27,12 +27,24 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
   const [srcSubdir, setSrcSubdir] = useState<string>('');
   const [availableSubdirs, setAvailableSubdirs] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [objdumpCommand, setObjdumpCommand] = useState<string>('objdump');
+  const [functionPadding, setFunctionPadding] = useState<number>(5);
   
-  // Load saved src subdirectory from localStorage and get available subdirectories
+  // Load saved settings from localStorage and get available subdirectories
   useEffect(() => {
     const savedSubdir = localStorage.getItem('profiler-src-subdir');
     if (savedSubdir) {
       setSrcSubdir(savedSubdir);
+    }
+    
+    const savedObjdump = localStorage.getItem('profiler-objdump-command');
+    if (savedObjdump) {
+      setObjdumpCommand(savedObjdump);
+    }
+    
+    const savedPadding = localStorage.getItem('profiler-function-padding');
+    if (savedPadding) {
+      setFunctionPadding(parseInt(savedPadding, 10));
     }
     
     // Set available subdirectories from static list
@@ -324,7 +336,7 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                 <div className="ml-6 mt-1">
                   <span className="text-xs text-gray-500">
                     {sortBy === 'coverage' 
-                      ? `${fileData.coveredLines} / ${fileData.totalLines} lines`
+                      ? `${fileData.coveredLines} / ${fileData.compiledLines} lines`
                       : getMetricDescription(sortBy)
                     }
                   </span>
@@ -375,7 +387,7 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                 <div className="ml-6 mt-1">
                   <span className="text-xs text-gray-500">
                     {sortBy === 'coverage' 
-                      ? `${func.data.coveredLines?.length || 0} / ${Object.keys(func.data.lines).length} lines`
+                      ? `${func.data.coveredLines?.length || 0} / ${(func.data.coveredLines?.length || 0) + (func.data.uncoveredLines?.length || 0)} lines`
                       : getMetricDescription(sortBy)
                     }
                   </span>
@@ -419,6 +431,39 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                   Select the src subdirectory where your source files are located. The system will intelligently map file paths to this directory.
                 </p>
               </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Objdump Command
+                </label>
+                <input
+                  type="text"
+                  value={objdumpCommand}
+                  onChange={(e) => setObjdumpCommand(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="objdump"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Command to use for disassembly. For example: riscv32-unknown-elf-objdump
+                </p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Function View Padding Lines
+                </label>
+                <input
+                  type="number"
+                  value={functionPadding}
+                  onChange={(e) => setFunctionPadding(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  min="0"
+                  max="50"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Number of extra lines to show before and after functions (0-50)
+                </p>
+              </div>
             </div>
             
             <div className="mt-6 flex justify-end gap-3">
@@ -432,6 +477,8 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                 onClick={() => {
                   // Save settings to localStorage
                   localStorage.setItem('profiler-src-subdir', srcSubdir);
+                  localStorage.setItem('profiler-objdump-command', objdumpCommand);
+                  localStorage.setItem('profiler-function-padding', functionPadding.toString());
                   setShowSettings(false);
                 }}
                 className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"

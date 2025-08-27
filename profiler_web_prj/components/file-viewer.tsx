@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { FileText, Code, Activity, Cpu, Zap, GitBranch, AlertCircle, Settings, Eye, Code2, Sun, Moon } from 'lucide-react';
+import { FileText, Code, Activity, Cpu, Zap, GitBranch, AlertCircle, Settings, Eye, Code2, Sun, Moon, AlignLeft, AlignRight } from 'lucide-react';
 import { FileCoverage, FunctionData } from '@/types/profiler';
 import { formatPercentage, getCoverageColor, cn } from '@/lib/utils';
 import Prism from 'prismjs';
@@ -196,12 +196,15 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
   const minLine = functionLineNumbers.length > 0 ? Math.min(...functionLineNumbers) : 1;
   const maxLine = functionLineNumbers.length > 0 ? Math.max(...functionLineNumbers) : allLines.length;
   
-  // If function is selected, show only function lines
+  // Get padding from localStorage
+  const functionPadding = parseInt(localStorage.getItem('profiler-function-padding') || '5', 10);
+  
+  // If function is selected, show function lines with padding
   const lines = selectedFunction && functionData ? 
-    allLines.slice(minLine - 1, maxLine) : 
+    allLines.slice(Math.max(0, minLine - 1 - functionPadding), Math.min(allLines.length, maxLine + functionPadding)) : 
     allLines;
   
-  const lineOffset = selectedFunction && functionData ? minLine - 1 : 0;
+  const lineOffset = selectedFunction && functionData ? Math.max(0, minLine - 1 - functionPadding) : 0;
   
   const coveredSet = new Set(fileData?.coveredLineNumbers || []);
   const uncoveredSet = new Set(fileData?.uncoveredLineNumbers || []);
@@ -213,6 +216,7 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
     threshold: 10000
   });
   const [splitPosition, setSplitPosition] = useState(50); // Percentage for split view
+  const [eventAlignLeft, setEventAlignLeft] = useState(false); // Event count alignment
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   
@@ -456,8 +460,8 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
     : fileData?.coveredLines || 0;
     
   const displayTotalLines = selectedFunction && functionData
-    ? Object.keys(functionData.lines || {}).length
-    : fileData?.totalLines || 0;
+    ? (functionData.coveredLines?.length || 0) + (functionData.uncoveredLines?.length || 0)
+    : fileData?.compiledLines || fileData?.totalLines || 0;
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -536,6 +540,24 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
                 Syntax Only
               </span>
             </button>
+            
+            {/* Event Alignment Toggle */}
+            {selectedEvents.size > 0 && !syntaxOnlyMode && (
+              <button
+                onClick={() => setEventAlignLeft(!eventAlignLeft)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors border border-gray-300"
+                title={eventAlignLeft ? "Align events to right" : "Align events to left"}
+              >
+                {eventAlignLeft ? (
+                  <AlignLeft className="w-4 h-4 text-gray-600" />
+                ) : (
+                  <AlignRight className="w-4 h-4 text-gray-600" />
+                )}
+                <span className="text-sm font-medium text-gray-700">
+                  Events
+                </span>
+              </button>
+            )}
           </div>
         </div>
         {!selectedFunction && (
@@ -614,7 +636,12 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
           <div className="mt-4 flex items-center justify-between">
             <div className="flex items-center gap-6 text-sm">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-green-900 bg-opacity-20 border border-green-700 rounded"></div>
+                <div className={cn(
+                  "w-4 h-4 border rounded",
+                  isDarkTheme 
+                    ? "bg-green-500 bg-opacity-30 border-green-400" 
+                    : "bg-green-500 bg-opacity-20 border-green-600"
+                )}></div>
                 <span className="text-gray-600">Executed Lines</span>
               </div>
               <div className="flex items-center gap-2">
@@ -622,7 +649,7 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
                   "w-4 h-4 border rounded",
                   isDarkTheme 
                     ? "bg-red-600 bg-opacity-20 border-red-500" 
-                    : "bg-red-300 bg-opacity-30 border-red-400"
+                    : "bg-red-300 bg-opacity-50 border-red-400"
                 )}></div>
                 <span className="text-gray-600">Not Executed</span>
               </div>
@@ -694,19 +721,39 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
                         <th className={cn(
                           "text-left px-4 py-2 text-xs font-medium",
                           isDarkTheme ? "text-gray-400" : "text-gray-600"
-                        )}>Line</th>
+                        )} style={{ width: '60px' }}>Line</th>
+                        {eventAlignLeft && (
+                          <>
+                            {Array.from(selectedEvents).map(event => (
+                              <th key={event} className={cn(
+                                "px-3 py-2 text-xs font-medium whitespace-nowrap text-right",
+                                isDarkTheme ? "text-gray-400" : "text-gray-600"
+                              )}
+                              style={{ width: '80px' }}
+                              >
+                                {event}
+                              </th>
+                            ))}
+                          </>
+                        )}
                         <th className={cn(
                           "text-left px-4 py-2 text-xs font-medium",
                           isDarkTheme ? "text-gray-400" : "text-gray-600"
-                        )}>Code</th>
-                        {Array.from(selectedEvents).map(event => (
-                          <th key={event} className={cn(
-                            "text-center px-2 py-2 text-xs font-medium w-16 min-w-[64px]",
-                            isDarkTheme ? "text-gray-400" : "text-gray-600"
-                          )}>
-                            {event}
-                          </th>
-                        ))}
+                        )} style={{ width: '100%' }}>Code</th>
+                        {!eventAlignLeft && (
+                          <>
+                            {Array.from(selectedEvents).map(event => (
+                              <th key={event} className={cn(
+                                "px-3 py-2 text-xs font-medium whitespace-nowrap text-right",
+                                isDarkTheme ? "text-gray-400" : "text-gray-600"
+                              )}
+                              style={{ width: '80px' }}
+                              >
+                                {event}
+                              </th>
+                            ))}
+                          </>
+                        )}
                       </tr>
                     </thead>
                   )}
@@ -739,8 +786,8 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
                               highlightedCodeLine === lineNumber ? 
                               'rgba(59, 130, 246, 0.2)' : 
                               isHotspotLine ? (isDarkTheme ? 'rgba(113, 63, 18, 0.3)' : 'rgba(251, 191, 36, 0.2)') :
-                              isCovered ? (isDarkTheme ? 'rgba(20, 83, 45, 0.2)' : 'rgba(34, 197, 94, 0.1)') :
-                              isUncovered ? (isDarkTheme ? 'rgba(220, 38, 38, 0.2)' : 'rgba(254, 202, 202, 0.3)') :
+                              isCovered ? (isDarkTheme ? 'rgba(34, 197, 94, 0.3)' : 'rgba(34, 197, 94, 0.2)') :
+                              isUncovered ? (isDarkTheme ? 'rgba(220, 38, 38, 0.2)' : 'rgba(254, 202, 202, 0.5)') :
                               !hasLineInfo ? (isDarkTheme ? 'rgba(107, 114, 128, 0.2)' : 'rgba(156, 163, 175, 0.15)') :
                               'transparent'
                             )
@@ -754,9 +801,29 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
                             ) : (
                               isCovered ? "text-blue-600" : "text-gray-400"
                             )
-                          )}>
+                          )} style={{ width: '60px' }}>
                             {lineNumber}
                           </td>
+                          
+                          {/* Event columns when aligned left */}
+                          {eventAlignLeft && (
+                            <>
+                              {Array.from(selectedEvents).map(event => (
+                                <td key={event} className={cn(
+                                  "px-3 py-1 text-xs whitespace-nowrap text-right font-mono",
+                                  isDarkTheme ? (
+                                    isCovered ? "text-gray-300" : "text-gray-600"
+                                  ) : (
+                                    isCovered ? "text-gray-700" : "text-gray-400"
+                                  )
+                                )}
+                                style={{ width: '80px' }}
+                                >
+                                  {lineMetrics[event] ? lineMetrics[event].toLocaleString() : '-'}
+                                </td>
+                              ))}
+                            </>
+                          )}
                           
                           {/* Code */}
                           <td className={cn(
@@ -768,7 +835,7 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
                                 isCovered ? "text-gray-900" : "text-gray-500"
                               )
                             )
-                          )}>
+                          )} style={{ width: '100%' }}>
                             {syntaxOnlyMode ? (
                               <pre className="m-0 p-0" dangerouslySetInnerHTML={{ __html: highlightedCode }} />
                             ) : (
@@ -776,19 +843,25 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
                             )}
                           </td>
                           
-                          {/* Event columns */}
-                          {Array.from(selectedEvents).map(event => (
-                            <td key={event} className={cn(
-                              "px-2 py-1 text-center text-xs w-16 min-w-[64px]",
-                              isDarkTheme ? (
-                                isCovered ? "text-gray-300" : "text-gray-600"
-                              ) : (
-                                isCovered ? "text-gray-700" : "text-gray-400"
-                              )
-                            )}>
-                              {lineMetrics[event] ? lineMetrics[event].toLocaleString() : '-'}
-                            </td>
-                          ))}
+                          {/* Event columns when aligned right */}
+                          {!eventAlignLeft && (
+                            <>
+                              {Array.from(selectedEvents).map(event => (
+                                <td key={event} className={cn(
+                                  "px-3 py-1 text-xs whitespace-nowrap text-right font-mono",
+                                  isDarkTheme ? (
+                                    isCovered ? "text-gray-300" : "text-gray-600"
+                                  ) : (
+                                    isCovered ? "text-gray-700" : "text-gray-400"
+                                  )
+                                )}
+                                style={{ width: '80px' }}
+                                >
+                                  {lineMetrics[event] ? lineMetrics[event].toLocaleString() : '-'}
+                                </td>
+                              ))}
+                            </>
+                          )}
                         </tr>
                       );
                     })}
@@ -824,6 +897,7 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
                 onPcClick={handleAssemblyLineClick}
                 isDarkTheme={isDarkTheme}
                 syntaxOnlyMode={syntaxOnlyMode}
+                eventAlignLeft={eventAlignLeft}
               />
             </div>
           </>
@@ -936,6 +1010,7 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
                 onPcClick={handleAssemblyLineClick}
                 isDarkTheme={isDarkTheme}
                 syntaxOnlyMode={syntaxOnlyMode}
+                eventAlignLeft={eventAlignLeft}
               />
             </div>
           </>

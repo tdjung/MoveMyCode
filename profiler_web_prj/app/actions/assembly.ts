@@ -9,7 +9,8 @@ const execAsync = promisify(exec);
 export async function getAssemblyCode(
   objectFile: string,
   startAddress: string,
-  endAddress: string
+  endAddress: string,
+  objdumpCommand: string = 'objdump'
 ): Promise<AssemblyData | null> {
   try {
     // Validate input
@@ -27,7 +28,7 @@ export async function getAssemblyCode(
     }
 
     // Construct objdump command with proper escaping
-    const command = `objdump -C -d --start-address=${startAddress} --stop-address=${endAddress} "${objectFile}"`;
+    const command = `${objdumpCommand} -C -d --start-address=${startAddress} --stop-address=${endAddress} "${objectFile}"`;
     
     // console.log('Executing objdump command:', command);
     
@@ -99,7 +100,8 @@ export async function getAssemblyCode(
 
 export async function getAssemblyForFunction(
   objectFile: string,
-  pcData: Record<string, any>
+  pcData: Record<string, any>,
+  objdumpCommand: string = 'objdump'
 ): Promise<AssemblyData | null> {
   if (!pcData || Object.keys(pcData).length === 0) {
     return null;
@@ -114,7 +116,7 @@ export async function getAssemblyForFunction(
   const startAddress = '0x' + (minPc - 16).toString(16);
   const endAddress = '0x' + (maxPc + 64).toString(16);
   
-  const assemblyData = await getAssemblyCode(objectFile, startAddress, endAddress);
+  const assemblyData = await getAssemblyCode(objectFile, startAddress, endAddress, objdumpCommand);
   
   if (assemblyData) {
     // Map PC data to assembly instructions

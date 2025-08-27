@@ -310,9 +310,10 @@ export class CachegrindParser {
         }
         
         // Calculate function coverage
-        const totalFuncLines = funcData.coveredLines.length + funcData.uncoveredLines.length;
-        funcData.coveragePercentage = totalFuncLines > 0
-          ? (funcData.coveredLines.length / totalFuncLines) * 100
+        // Only count lines with PC data (compiled lines)
+        const totalFuncCompiledLines = funcData.coveredLines.length + funcData.uncoveredLines.length;
+        funcData.coveragePercentage = totalFuncCompiledLines > 0
+          ? (funcData.coveredLines.length / totalFuncCompiledLines) * 100
           : 0;
       }
 
@@ -320,20 +321,22 @@ export class CachegrindParser {
       const sourceCode = this.getSourceCode(filePath);
       const actualTotalLines = sourceCode ? sourceCode.split('\n').length : maxLine;
       
-      // Don't mark lines without PC data as uncovered - they're non-compiled lines
-      // Only lines with PC data but not executed should be in uncoveredLineNumbers
-
+      // Calculate coverage based only on compiled lines (lines with PC data)
+      // Non-compiled lines (comments, blank lines, etc.) are excluded
+      const compiledLineCount = coveredLineNumbers.size + uncoveredLineNumbers.size;
       const coveredLines = coveredLineNumbers.size;
-      const coveragePercentage = actualTotalLines > 0
-        ? (coveredLines / actualTotalLines) * 100
+      const coveragePercentage = compiledLineCount > 0
+        ? (coveredLines / compiledLineCount) * 100
         : 0;
 
-      totalProjectLines += actualTotalLines;
+      // Update project totals to only count compiled lines
+      totalProjectLines += compiledLineCount;
       totalProjectCoveredLines += coveredLines;
 
       fileCoverage[filePath] = {
         sourceFilePath: filePath,
         totalLines: actualTotalLines,
+        compiledLines: compiledLineCount,
         coveredLines,
         coveragePercentage,
         coveredLineNumbers: Array.from(coveredLineNumbers).sort((a, b) => a - b),
