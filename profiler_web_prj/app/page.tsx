@@ -2,22 +2,60 @@
 
 import { useState } from 'react';
 import { FileUpload } from '@/components/file-upload';
+import { ServerFileBrowser } from '@/components/server-file-browser';
 import { ProfilerDashboard } from '@/components/profiler-dashboard';
 import { LoadingSpinner } from '@/components/loading-spinner';
-import { parseCachegrindFile } from '@/app/actions/profiler';
+import { parseCachegrindFile, readServerFile } from '@/app/actions/profiler';
 import { CachegrindData } from '@/types/profiler';
-import { BarChart3, AlertCircle } from 'lucide-react';
+import { BarChart3, AlertCircle, Upload, HardDrive } from 'lucide-react';
 
 export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [data, setData] = useState<CachegrindData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fileSource, setFileSource] = useState<'client' | 'server'>('client');
 
   const handleFileSelect = async (file: File) => {
     setIsProcessing(true);
     setError(null);
     
     try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const result = await parseCachegrindFile(formData);
+      
+      if (result.success && result.data) {
+        setData(result.data);
+      } else {
+        setError(result.error || 'Failed to parse file');
+      }
+    } catch (err) {
+      setError('An unexpected error occurred');
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleServerFileSelect = async (filePath: string) => {
+    setIsProcessing(true);
+    setError(null);
+    
+    try {
+      // Read file content from server
+      const fileResult = await readServerFile(filePath);
+      
+      if (!fileResult.success || !fileResult.content) {
+        setError(fileResult.error || 'Failed to read file from server');
+        return;
+      }
+      
+      // Create a File object from the content
+      const fileName = filePath.split('/').pop() || 'file';
+      const file = new File([fileResult.content], fileName, { type: 'text/plain' });
+      
+      // Parse the file
       const formData = new FormData();
       formData.append('file', file);
       
@@ -59,11 +97,47 @@ export default function Home() {
 
         {/* Upload Section */}
         <div className="max-w-4xl mx-auto">
+          {/* File Source Toggle */}
+          <div className="flex justify-center mb-6">
+            <div className="inline-flex rounded-lg border border-gray-300 bg-white shadow-sm">
+              <button
+                onClick={() => setFileSource('client')}
+                className={`flex items-center gap-2 px-6 py-3 rounded-l-lg transition-colors ${
+                  fileSource === 'client' 
+                    ? 'bg-blue-500 text-white' 
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <Upload className="w-4 h-4" />
+                Upload from Computer
+              </button>
+              <button
+                onClick={() => setFileSource('server')}
+                className={`flex items-center gap-2 px-6 py-3 rounded-r-lg transition-colors ${
+                  fileSource === 'server' 
+                    ? 'bg-blue-500 text-white' 
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <HardDrive className="w-4 h-4" />
+                Browse Server Files
+              </button>
+            </div>
+          </div>
+
           {!isProcessing && !error && (
-            <FileUpload 
-              onFileSelect={handleFileSelect}
-              isProcessing={isProcessing}
-            />
+            fileSource === 'client' ? (
+              <FileUpload 
+                onFileSelect={handleFileSelect}
+                isProcessing={isProcessing}
+              />
+            ) : (
+              <ServerFileBrowser
+                onFileSelect={handleServerFileSelect}
+                isProcessing={isProcessing}
+                initialDirectory="output"
+              />
+            )
           )}
 
           {isProcessing && <LoadingSpinner />}

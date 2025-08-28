@@ -117,19 +117,29 @@ export class CachegrindParser {
       if (trimmedLine.startsWith('fn=')) {
         currentFunction = trimmedLine.substring(3);
         if (currentFile && currentFunction) {
-          this.filesData[currentFile].functions[currentFunction] = {
-            lines: {},
-            totals: Object.fromEntries(this.events.map(event => [event, 0])),
-            coveredLines: [],
-            uncoveredLines: [],
-            coveragePercentage: 0.0,
-            pcData: this.isCallgrind ? {} : undefined
-          };
+          // Check if function already exists (inline function case)
+          if (!this.filesData[currentFile].functions[currentFunction]) {
+            this.filesData[currentFile].functions[currentFunction] = {
+              lines: {},
+              totals: Object.fromEntries(this.events.map(event => [event, 0])),
+              coveredLines: [],
+              uncoveredLines: [],
+              coveragePercentage: 0.0,
+              pcData: this.isCallgrind ? {} : undefined
+            };
+          }
+          // If function already exists, we'll accumulate the data
         }
         continue;
       }
 
-      // Handle cfi= (called file)
+      // Handle cfl= (called file) - callgrind uses 'cfl' not 'cfi'
+      if (trimmedLine.startsWith('cfl=')) {
+        this.pendingCallFile = trimmedLine.substring(4);
+        continue;
+      }
+      
+      // Also handle cfi= for compatibility
       if (trimmedLine.startsWith('cfi=')) {
         this.pendingCallFile = trimmedLine.substring(4);
         continue;
@@ -270,7 +280,20 @@ export class CachegrindParser {
               });
               lineData.executed = eventCounts.some(count => count > 0);
               
-              this.filesData[currentFile].functions[currentFunction].lines[lineNum] = lineData;
+              // Store in line data with accumulation
+              if (!this.filesData[currentFile].functions[currentFunction].lines[lineNum]) {
+                this.filesData[currentFile].functions[currentFunction].lines[lineNum] = {
+                  executed: false
+                };
+              }
+              
+              // Aggregate events for the same line (inline function case)
+              const existingLineData = this.filesData[currentFile].functions[currentFunction].lines[lineNum];
+              eventCounts.forEach((count, idx) => {
+                const event = this.events[idx];
+                existingLineData[event] = (existingLineData[event] as number || 0) + count;
+              });
+              existingLineData.executed = existingLineData.executed || lineData.executed;
               
               // Update function totals
               eventCounts.forEach((count, idx) => {
@@ -296,18 +319,26 @@ export class CachegrindParser {
 
       // Collect all line information
       for (const [funcName, funcData] of Object.entries(fileInfo.functions)) {
+        // Use Sets to avoid duplicates in inline functions
+        const funcCoveredLines = new Set<number>();
+        const funcUncoveredLines = new Set<number>();
+        
         for (const [lineNumStr, lineData] of Object.entries(funcData.lines)) {
           const lineNum = parseInt(lineNumStr);
           maxLine = Math.max(maxLine, lineNum);
           
           if (lineData.executed) {
             coveredLineNumbers.add(lineNum);
-            funcData.coveredLines.push(lineNum);
+            funcCoveredLines.add(lineNum);
           } else {
             uncoveredLineNumbers.add(lineNum);
-            funcData.uncoveredLines.push(lineNum);
+            funcUncoveredLines.add(lineNum);
           }
         }
+        
+        // Convert Sets back to sorted arrays
+        funcData.coveredLines = Array.from(funcCoveredLines).sort((a, b) => a - b);
+        funcData.uncoveredLines = Array.from(funcUncoveredLines).sort((a, b) => a - b);
         
         // Calculate function coverage
         // Only count lines with PC data (compiled lines)

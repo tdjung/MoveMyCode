@@ -42,7 +42,7 @@ export class CallTreeSearchEngine {
         
         // Index word boundaries for better search
         // Split on non-alphanumeric, camelCase, and snake_case
-        const words = functionNameLower
+        const words = node.functionName
           .replace(/([a-z])([A-Z])/g, '$1 $2') // camelCase
           .replace(/_/g, ' ') // snake_case
           .split(/[^a-zA-Z0-9]+/)

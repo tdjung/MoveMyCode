@@ -16,6 +16,7 @@ export function ProfilerDashboard({ data, onReset }: ProfilerDashboardProps) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFunction, setSelectedFunction] = useState<string | null>(null);
   const [showCallTree, setShowCallTree] = useState(false);
+  const [callTreeEntryPoint, setCallTreeEntryPoint] = useState<string | null>(null);
 
   const handleFunctionSelect = (funcName: string | null, fileName: string | null) => {
     setSelectedFunction(funcName);
@@ -26,6 +27,14 @@ export function ProfilerDashboard({ data, onReset }: ProfilerDashboardProps) {
 
   const handleCallTreeView = () => {
     setShowCallTree(true);
+    setCallTreeEntryPoint(null); // Reset entry point
+    setSelectedFile(null);
+    setSelectedFunction(null);
+  };
+  
+  const handleCallTreeWithEntry = (functionName: string) => {
+    setShowCallTree(true);
+    setCallTreeEntryPoint(functionName);
     setSelectedFile(null);
     setSelectedFunction(null);
   };
@@ -49,12 +58,13 @@ export function ProfilerDashboard({ data, onReset }: ProfilerDashboardProps) {
       
       <div className="flex-1 overflow-hidden">
         {showCallTree ? (
-          <CallTreeViewer data={data} />
+          <CallTreeViewer data={data} entryPoint={callTreeEntryPoint} />
         ) : selectedFile && data.fileCoverage[selectedFile] ? (
           <FileViewer 
             filename={selectedFile}
             fileData={data.fileCoverage[selectedFile]}
             selectedFunction={selectedFunction}
+            onCallTreeView={handleCallTreeWithEntry}
           />
         ) : selectedFile ? (
           <div className="flex items-center justify-center h-full">

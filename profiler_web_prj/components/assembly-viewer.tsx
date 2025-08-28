@@ -77,13 +77,17 @@ export function AssemblyViewer({
         setAssemblyData(data);
         
         // Cache the result
-        assemblyCache.set(cacheKey, data);
-        cacheKeyRef.current = cacheKey;
+        if (data !== null) {
+          assemblyCache.set(cacheKey, data);
+          cacheKeyRef.current = cacheKey;
+        }
         
         // Limit cache size to prevent memory issues
         if (assemblyCache.size > 10) {
           const firstKey = assemblyCache.keys().next().value;
-          assemblyCache.delete(firstKey);
+          if (firstKey) {
+            assemblyCache.delete(firstKey);
+          }
         }
       } catch (err: any) {
         // Provide more specific error messages

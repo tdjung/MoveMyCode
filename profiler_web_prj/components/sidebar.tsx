@@ -187,29 +187,6 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
         )}
       </div>
 
-      {/* Stats */}
-      <div className="px-4 pb-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-gray-50 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-gray-600 mb-1">
-              <Activity className="w-4 h-4" />
-              <span className="text-xs">Coverage</span>
-            </div>
-            <p className={cn("text-xl font-bold", getCoverageColor(data.coveragePercentage))}>
-              {formatPercentage(data.coveragePercentage)}
-            </p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-gray-600 mb-1">
-              <FileText className="w-4 h-4" />
-              <span className="text-xs">Files</span>
-            </div>
-            <p className="text-xl font-bold text-gray-800">
-              {data.filesAnalyzed}
-            </p>
-          </div>
-        </div>
-      </div>
 
       {/* Search */}
       <div className="px-4 pb-2">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { FileText, Code, Activity, Cpu, Zap, GitBranch, AlertCircle, Settings, Eye, Code2, Sun, Moon, AlignLeft, AlignRight } from 'lucide-react';
+import { FileText, Code, Activity, Cpu, Zap, GitBranch, AlertCircle, Settings, Eye, Code2, Sun, Moon, AlignLeft, AlignRight, ChevronUp, ChevronDown } from 'lucide-react';
 import { FileCoverage, FunctionData } from '@/types/profiler';
 import { formatPercentage, getCoverageColor, cn } from '@/lib/utils';
 import Prism from 'prismjs';
@@ -172,6 +172,7 @@ interface FileViewerProps {
   filename: string;
   fileData: FileCoverage;
   selectedFunction?: string | null;
+  onCallTreeView?: (functionName: string) => void;
 }
 
 interface HotspotSettings {
@@ -179,7 +180,7 @@ interface HotspotSettings {
   threshold: number;
 }
 
-export function FileViewer({ filename, fileData, selectedFunction }: FileViewerProps) {
+export function FileViewer({ filename, fileData, selectedFunction, onCallTreeView }: FileViewerProps) {
   // Handle missing or empty source code
   const sourceCode = fileData?.sourceCode || '';
   const hasSourceCode = sourceCode && 
@@ -227,6 +228,12 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
   // State for theme
   const [isDarkTheme, setIsDarkTheme] = useState(true);
   const [syntaxOnlyMode, setSyntaxOnlyMode] = useState(false);
+  
+  // State for collapsible header
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+  
+  // State for event dropdown
+  const [eventDropdownOpen, setEventDropdownOpen] = useState(false);
 
   // Calculate total metrics from functions or selected function
   const calculateTotalMetrics = () => {
@@ -450,6 +457,23 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
     };
   }, [hasSourceCode, sourceCode, selectedFunction]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (eventDropdownOpen) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.relative')) {
+          setEventDropdownOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [eventDropdownOpen]);
+
   // Calculate coverage for display
   const displayCoverage = selectedFunction && functionData 
     ? functionData.coveragePercentage 
@@ -466,104 +490,152 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Header */}
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-3">
-            {selectedFunction ? (
-              <>
-                <Code2 className="w-6 h-6 text-gray-600" />
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-800">{selectedFunction}</h2>
-                  <p className="text-sm text-gray-600 flex items-center gap-2 mt-1">
-                    <FileText className="w-4 h-4" />
-                    {filename.split('/').pop() || filename}
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                <FileText className="w-6 h-6 text-gray-600" />
-                <h2 className="text-2xl font-bold text-gray-800">{filename.split('/').pop() || filename}</h2>
-              </>
-            )}
+      <div className="border-b border-gray-200 sticky top-0 z-10 bg-white">
+        <div className="p-6 pb-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 flex-1">
+              {selectedFunction ? (
+                <>
+                  <Code2 className="w-6 h-6 text-gray-600 flex-shrink-0" />
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-800">{selectedFunction}</h2>
+                    <p className="text-sm text-gray-600 flex items-center gap-2 mt-1">
+                      <FileText className="w-4 h-4" />
+                      {filename.split('/').pop() || filename}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <FileText className="w-6 h-6 text-gray-600 flex-shrink-0" />
+                  <h2 className="text-2xl font-bold text-gray-800">{filename.split('/').pop() || filename}</h2>
+                </>
+              )}
+            </div>
+            
+            {/* Control Buttons */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Call Tree View Button - Only show when a function is selected */}
+              {selectedFunction && onCallTreeView && (
+                <button
+                  onClick={() => onCallTreeView(selectedFunction)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-md transition-colors"
+                  title={`View call tree starting from ${selectedFunction}`}
+                >
+                  <GitBranch className="w-4 h-4" />
+                  <span className="text-sm font-medium">Call Tree</span>
+                </button>
+              )}
+              
+              {/* Theme Toggle */}
+              <button
+                onClick={() => setIsDarkTheme(!isDarkTheme)}
+                className={cn(
+                  "p-2 rounded-md transition-colors",
+                  isDarkTheme 
+                    ? "bg-gray-700 hover:bg-gray-600" 
+                    : "bg-gray-100 hover:bg-gray-200"
+                )}
+                title={isDarkTheme ? "Switch to light theme" : "Switch to dark theme"}
+              >
+                {isDarkTheme ? (
+                  <Sun className="w-4 h-4 text-yellow-500" />
+                ) : (
+                  <Moon className="w-4 h-4 text-gray-600" />
+                )}
+              </button>
+              
+              {/* Syntax Only Mode Toggle */}
+              <button
+                onClick={() => setSyntaxOnlyMode(!syntaxOnlyMode)}
+                className={cn(
+                  "p-2 rounded-md transition-colors",
+                  syntaxOnlyMode
+                    ? "bg-purple-100 hover:bg-purple-200"
+                    : "bg-gray-100 hover:bg-gray-200"
+                )}
+                title={syntaxOnlyMode ? "Show coverage highlights" : "Show syntax highlighting only"}
+              >
+                <Code2 className={cn(
+                  "w-4 h-4",
+                  syntaxOnlyMode
+                    ? "text-purple-600"
+                    : "text-gray-600"
+                )} />
+              </button>
+              
+              {/* Event Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setEventDropdownOpen(!eventDropdownOpen)}
+                  className="flex items-center gap-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                >
+                  <Eye className="w-4 h-4 text-gray-600" />
+                  <span className="text-sm font-medium text-gray-700">Events</span>
+                  <ChevronDown className="w-3 h-3 text-gray-600" />
+                </button>
+                
+                {eventDropdownOpen && (
+                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
+                    <div className="p-2">
+                      {availableEvents.map(event => (
+                        <label key={event} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedEvents.has(event)}
+                            onChange={(e) => {
+                              const newSelected = new Set(selectedEvents);
+                              if (e.target.checked) {
+                                newSelected.add(event);
+                              } else {
+                                newSelected.delete(event);
+                              }
+                              setSelectedEvents(newSelected);
+                            }}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3 h-3"
+                          />
+                          <span className="text-sm text-gray-700">{event}</span>
+                          <span className="text-xs text-gray-500 ml-auto">{getEventDescription(event)}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {selectedEvents.size > 0 && (
+                      <div className="border-t border-gray-200 p-2">
+                        <button
+                          onClick={() => setEventAlignLeft(!eventAlignLeft)}
+                          className="w-full flex items-center justify-between px-2 py-1 hover:bg-gray-50 rounded"
+                        >
+                          <span className="text-sm text-gray-700">Alignment</span>
+                          <span className="text-sm text-gray-500">{eventAlignLeft ? 'Left' : 'Right'}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Collapse button */}
+            <button
+              onClick={() => setIsHeaderCollapsed(!isHeaderCollapsed)}
+              className="p-2 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+              title={isHeaderCollapsed ? "Expand header" : "Collapse header"}
+            >
+              {isHeaderCollapsed ? (
+                <ChevronDown className="w-5 h-5 text-gray-600" />
+              ) : (
+                <ChevronUp className="w-5 h-5 text-gray-600" />
+              )}
+            </button>
           </div>
           
-          {/* Button group on the right */}
-          <div className="flex items-center gap-2">
-            {/* Theme Toggle */}
-            <button
-              onClick={() => setIsDarkTheme(!isDarkTheme)}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-md transition-colors",
-                isDarkTheme 
-                  ? "bg-gray-700 hover:bg-gray-600 border border-gray-600" 
-                  : "bg-gray-100 hover:bg-gray-200 border border-gray-300"
-              )}
-              title={isDarkTheme ? "Switch to light theme" : "Switch to dark theme"}
-            >
-              {isDarkTheme ? (
-                <Sun className="w-4 h-4 text-yellow-500" />
-              ) : (
-                <Moon className="w-4 h-4 text-gray-600" />
-              )}
-              <span className={cn(
-                "text-sm font-medium",
-                isDarkTheme ? "text-gray-200" : "text-gray-700"
-              )}>
-                {isDarkTheme ? 'Light Theme' : 'Dark Theme'}
-              </span>
-            </button>
-            
-            {/* Syntax Only Mode Toggle */}
-            <button
-              onClick={() => setSyntaxOnlyMode(!syntaxOnlyMode)}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-md transition-colors border",
-                syntaxOnlyMode
-                  ? "bg-purple-100 hover:bg-purple-200 border-purple-300"
-                  : "bg-gray-100 hover:bg-gray-200 border-gray-300"
-              )}
-              title={syntaxOnlyMode ? "Show coverage highlights" : "Show syntax highlighting only"}
-            >
-              <Code2 className={cn(
-                "w-4 h-4",
-                syntaxOnlyMode
-                  ? "text-purple-600"
-                  : "text-gray-600"
-              )} />
-              <span className={cn(
-                "text-sm font-medium",
-                syntaxOnlyMode
-                  ? "text-purple-700"
-                  : "text-gray-700"
-              )}>
-                Syntax Only
-              </span>
-            </button>
-            
-            {/* Event Alignment Toggle */}
-            {selectedEvents.size > 0 && !syntaxOnlyMode && (
-              <button
-                onClick={() => setEventAlignLeft(!eventAlignLeft)}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors border border-gray-300"
-                title={eventAlignLeft ? "Align events to right" : "Align events to left"}
-              >
-                {eventAlignLeft ? (
-                  <AlignLeft className="w-4 h-4 text-gray-600" />
-                ) : (
-                  <AlignRight className="w-4 h-4 text-gray-600" />
-                )}
-                <span className="text-sm font-medium text-gray-700">
-                  Events
-                </span>
-              </button>
-            )}
-          </div>
-        </div>
-        {!selectedFunction && (
-          <p className="text-sm text-gray-500 mb-2">{filename}</p>
-        )}
-        <div className="flex items-center gap-6 text-sm">
+          {!selectedFunction && !isHeaderCollapsed && (
+            <p className="text-sm text-gray-500 mb-2">{filename}</p>
+          )}
+          
+          {!isHeaderCollapsed && (
+            <>
+          <div className="flex items-center gap-6 text-sm">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-gray-500" />
             <span className="text-gray-600">Coverage:</span>
@@ -596,105 +668,48 @@ export function FileViewer({ filename, fileData, selectedFunction }: FileViewerP
           </div>
         </div>
 
-        {/* Compact Controls Row */}
-        <div className="mt-4 bg-gray-50 rounded-lg p-3">
-          <div className="flex items-center gap-6 flex-wrap justify-between">
-            <div className="flex items-center gap-6 flex-wrap">
-              {/* Metrics Selection */}
-              <div className="flex items-center gap-2">
-                <Eye className="w-4 h-4 text-gray-600" />
-                <span className="text-sm font-medium text-gray-700">Show:</span>
-                <div className="flex gap-3">
-                {availableEvents.map(event => (
-                  <label key={event} className="flex items-center gap-1 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedEvents.has(event)}
-                      onChange={(e) => {
-                        const newSelected = new Set(selectedEvents);
-                        if (e.target.checked) {
-                          newSelected.add(event);
-                        } else {
-                          newSelected.delete(event);
-                        }
-                        setSelectedEvents(newSelected);
-                      }}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3 h-3"
-                    />
-                    <span className="text-xs text-gray-600">{event}</span>
-                  </label>
-                ))}
+
+              {/* Performance Legend */}
+              {!syntaxOnlyMode && (
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="flex items-center gap-6 text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "w-4 h-4 border rounded",
+                        isDarkTheme 
+                          ? "bg-green-500 bg-opacity-30 border-green-400" 
+                          : "bg-green-500 bg-opacity-20 border-green-600"
+                      )}></div>
+                      <span className="text-gray-600">Executed Lines</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "w-4 h-4 border rounded",
+                        isDarkTheme 
+                          ? "bg-red-600 bg-opacity-20 border-red-500" 
+                          : "bg-red-300 bg-opacity-50 border-red-400"
+                      )}></div>
+                      <span className="text-gray-600">Not Executed</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-blue-600 bg-opacity-30 border border-blue-500 rounded"></div>
+                      <span className="text-gray-600">Linked Highlight</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "w-4 h-4 border rounded",
+                        isDarkTheme 
+                          ? "bg-gray-500 bg-opacity-20 border-gray-600" 
+                          : "bg-gray-400 bg-opacity-15 border-gray-500"
+                      )}></div>
+                      <span className="text-gray-600">Assembly View</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-
-          </div>
+              )}
+            </>
+          )}
         </div>
-
-        {/* Performance Legend */}
-        {!syntaxOnlyMode && (
-          <div className="mt-4 flex items-center justify-between">
-            <div className="flex items-center gap-6 text-sm">
-              <div className="flex items-center gap-2">
-                <div className={cn(
-                  "w-4 h-4 border rounded",
-                  isDarkTheme 
-                    ? "bg-green-500 bg-opacity-30 border-green-400" 
-                    : "bg-green-500 bg-opacity-20 border-green-600"
-                )}></div>
-                <span className="text-gray-600">Executed Lines</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={cn(
-                  "w-4 h-4 border rounded",
-                  isDarkTheme 
-                    ? "bg-red-600 bg-opacity-20 border-red-500" 
-                    : "bg-red-300 bg-opacity-50 border-red-400"
-                )}></div>
-                <span className="text-gray-600">Not Executed</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-blue-600 bg-opacity-30 border border-blue-500 rounded"></div>
-                <span className="text-gray-600">Linked Highlight</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={cn(
-                  "w-4 h-4 border rounded",
-                  isDarkTheme 
-                    ? "bg-gray-500 bg-opacity-20 border-gray-600" 
-                    : "bg-gray-400 bg-opacity-15 border-gray-500"
-                )}></div>
-                <span className="text-gray-600">Non-compiled Lines</span>
-              </div>
-            </div>
-            
-            {/* Performance Hotspot with Settings */}
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-yellow-900 bg-opacity-30 border border-yellow-700 rounded"></div>
-                <span className="text-gray-600 text-sm">Performance Hotspot</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <select 
-                  value={hotspotSettings.event}
-                  onChange={(e) => setHotspotSettings({ ...hotspotSettings, event: e.target.value })}
-                  className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-yellow-500 focus:border-yellow-500"
-                >
-                  {availableEvents.map(event => (
-                    <option key={event} value={event}>{event}</option>
-                  ))}
-                </select>
-                <span className="text-xs text-gray-600">&gt;</span>
-                <input
-                  type="number"
-                  value={hotspotSettings.threshold}
-                  onChange={(e) => setHotspotSettings({ ...hotspotSettings, threshold: parseInt(e.target.value) || 0 })}
-                  className="w-20 text-xs px-2 py-1 border border-gray-300 rounded focus:ring-yellow-500 focus:border-yellow-500"
-                />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main content area with resizable split */}

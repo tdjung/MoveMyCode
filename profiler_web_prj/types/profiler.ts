@@ -80,3 +80,16 @@ export interface ParsedFile {
   lastModified: number;
   content: string;
 }
+
+export interface CallTreeNode {
+  id: string;
+  functionName: string;
+  fileName: string;
+  pcStart: string;
+  pcEnd: string;
+  callCount: number;
+  totalTime: number;
+  selfTime: number;
+  children: CallTreeNode[];
+  calls?: CallInfo[];
+}

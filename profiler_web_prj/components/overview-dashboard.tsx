@@ -172,7 +172,7 @@ export function OverviewDashboard({ data }: OverviewDashboardProps) {
                           {formatPercentage(fileData.coveragePercentage)}
                         </td>
                         <td className="py-2 px-3 text-sm text-right text-gray-600">
-                          {fileData.coveredLines} / {fileData.totalLines}
+                          {fileData.coveredLines} / {fileData.compiledLines}
                         </td>
                         <td className="py-2 px-3">
                           <div className="w-full bg-gray-200 rounded-full h-1.5">
