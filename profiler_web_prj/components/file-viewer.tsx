@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileText, Code, Activity, Cpu, Zap, GitBranch, AlertCircle, Settings, Eye, Code2, Sun, Moon, AlignLeft, AlignRight, ChevronUp, ChevronDown } from 'lucide-react';
 import { FileCoverage, FunctionData } from '@/types/profiler';
 import { formatPercentage, getCoverageColor, cn } from '@/lib/utils';
@@ -1034,3 +1034,6 @@ export function FileViewer({ filename, fileData, selectedFunction, onCallTreeVie
     </div>
   );
 }
+
+// Memoize FileViewer to prevent unnecessary re-renders
+export const MemoizedFileViewer = React.memo(FileViewer);

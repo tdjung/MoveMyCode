@@ -11,9 +11,10 @@ import { FlowChartView } from './flow-chart-view';
 interface CallTreeViewerProps {
   data: CachegrindData;
   entryPoint?: string | null;
+  onViewCode?: (fileName: string, functionName: string) => void;
 }
 
-export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTreeViewerProps) {
+export function CallTreeViewer({ data, entryPoint: initialEntryPoint, onViewCode }: CallTreeViewerProps) {
   const [viewMode, setViewMode] = useState<'tree' | 'caller' | 'callee'>('tree');
   const [filterDepth, setFilterDepth] = useState(10);
   const [customDepth, setCustomDepth] = useState(1);
@@ -347,8 +348,16 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
     if (initialEntryPoint) {
       setEntryPoint(initialEntryPoint);
       setEntryPointInput(initialEntryPoint);
+      
+      // If entry point is a function name, try to find and select it
+      const foundNode = Array.from(nodeMap.values()).find(
+        node => node.functionName === initialEntryPoint
+      );
+      if (foundNode) {
+        setSelectedFunction(foundNode);
+      }
     }
-  }, [initialEntryPoint]);
+  }, [initialEntryPoint, nodeMap]);
   
   // Handle manual entry point
   const handleManualEntryPoint = useCallback(() => {
@@ -1009,6 +1018,14 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
                         <div><span className="font-medium">Call Count:</span> {selectedFunction.callCount}</div>
                         <div><span className="font-medium">{metricNameCapitalized} per Call:</span> {Math.round(selectedFunction.totalTime / selectedFunction.callCount).toLocaleString()} {metricName}</div>
                       </div>
+                      {onViewCode && (
+                        <button
+                          onClick={() => onViewCode(selectedFunction.fileName, selectedFunction.functionName)}
+                          className="mt-3 w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                        >
+                          View Code
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -1102,6 +1119,14 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
                     <div><span className="font-medium">Call Count:</span> {selectedFunction.callCount}</div>
                     <div><span className="font-medium">{metricNameCapitalized} per Call:</span> {Math.round(selectedFunction.totalTime / selectedFunction.callCount).toLocaleString()} {metricName}</div>
                   </div>
+                  {onViewCode && (
+                    <button
+                      onClick={() => onViewCode(selectedFunction.fileName, selectedFunction.functionName)}
+                      className="mt-3 w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                    >
+                      View Code
+                    </button>
+                  )}
                 </div>
               )}
 

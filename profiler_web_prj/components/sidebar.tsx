@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { FileText, Activity, BarChart3, ChevronDown, Code2, FolderOpen, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, GitBranch, Settings, X, Search } from 'lucide-react';
+import { Activity, BarChart3, ChevronDown, FolderOpen, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, GitBranch, Settings, X, Search, Code2 } from 'lucide-react';
 import { availableSrcSubdirectories } from '@/lib/src-directories';
 import { cn, formatPercentage, getCoverageColor, getCoverageBgColor } from '@/lib/utils';
 import { CachegrindData } from '@/types/profiler';
@@ -134,9 +134,9 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
     return functions;
   }, [data]);
 
-  // Get all functions across all files with sorting
-  const getAllFunctions = () => {
-    return functionsWithInclusiveTotals.sort((a, b) => {
+  // Memoize sorted functions to avoid re-sorting on every render
+  const sortedFunctions = useMemo(() => {
+    return [...functionsWithInclusiveTotals].sort((a, b) => {
       const aValue = sortBy === 'coverage' 
         ? a.data.coveragePercentage 
         : sortByInclusive && sortBy !== 'coverage'
@@ -149,26 +149,31 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
           : (b.data.totals[sortBy] || 0);
       return sortAscending ? aValue - bValue : bValue - aValue;
     });
-  };
+  }, [functionsWithInclusiveTotals, sortBy, sortAscending, sortByInclusive]);
   
-  const files = Object.entries(data.fileCoverage).sort((a, b) => {
-    const aValue = getFileMetric(a[1], sortBy);
-    const bValue = getFileMetric(b[1], sortBy);
-    return sortAscending ? aValue - bValue : bValue - aValue;
-  });
+  // Memoize sorted files
+  const sortedFiles = useMemo(() => {
+    return Object.entries(data.fileCoverage).sort((a, b) => {
+      const aValue = getFileMetric(a[1], sortBy);
+      const bValue = getFileMetric(b[1], sortBy);
+      return sortAscending ? aValue - bValue : bValue - aValue;
+    });
+  }, [data.fileCoverage, sortBy, sortAscending]);
 
-  const functions = getAllFunctions();
-
-  // Filter files and functions based on search query
-  const filteredFiles = files.filter(([filename]) => 
-    filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (filename.split('/').pop() || filename).toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Memoize filtered files and functions
+  const filteredFiles = useMemo(() => {
+    return sortedFiles.filter(([filename]) => 
+      filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (filename.split('/').pop() || filename).toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [sortedFiles, searchQuery]);
   
-  const filteredFunctions = functions.filter((func) =>
-    func.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (func.file.split('/').pop() || func.file).toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredFunctions = useMemo(() => {
+    return sortedFunctions.filter((func) =>
+      func.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (func.file.split('/').pop() || func.file).toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [sortedFunctions, searchQuery]);
 
   return (
     <div className="w-full bg-white border-r border-gray-200 flex flex-col h-full">
@@ -331,7 +336,6 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
       <div className="px-2 pb-1">
         {viewMode === 'files' ? (
           <div className="flex items-center gap-2 px-3 py-1 text-xs text-gray-500 font-medium border-b border-gray-200">
-            <FileText className="w-3 h-3 opacity-0" />
             {sortBy === 'coverage' ? (
               <>
                 <span className="w-12 text-center">%</span>
@@ -344,7 +348,6 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
           </div>
         ) : (
           <div className="flex items-center gap-2 px-3 py-1 text-xs text-gray-500 font-medium border-b border-gray-200">
-            <Code2 className="w-3 h-3 opacity-0" />
             {sortBy === 'coverage' ? (
               <>
                 <span className="w-12 text-center">%</span>
@@ -382,7 +385,6 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
                   {sortBy === 'coverage' ? (
                     <>
                       <span className={cn(
@@ -424,7 +426,6 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <Code2 className="w-3 h-3 text-gray-400 flex-shrink-0" />
                   {sortBy === 'coverage' ? (
                     <>
                       <span className={cn(

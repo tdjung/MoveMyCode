@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { CachegrindData } from '@/types/profiler';
 import { Sidebar } from './sidebar';
-import { FileViewer } from './file-viewer';
+import { MemoizedFileViewer as FileViewer } from './file-viewer';
 import { OverviewDashboard } from './overview-dashboard';
 import { CallTreeViewer } from './call-tree-viewer';
 
@@ -17,22 +17,24 @@ export function ProfilerDashboard({ data, onReset }: ProfilerDashboardProps) {
   const [selectedFunction, setSelectedFunction] = useState<string | null>(null);
   const [showCallTree, setShowCallTree] = useState(false);
   const [callTreeEntryPoint, setCallTreeEntryPoint] = useState<string | null>(null);
+  const [callTreeSelectedFunction, setCallTreeSelectedFunction] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(320); // Default width
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
 
-  const handleFunctionSelect = (funcName: string | null, fileName: string | null) => {
+  const handleFunctionSelect = useCallback((funcName: string | null, fileName: string | null) => {
     setSelectedFunction(funcName);
     if (fileName) {
       setSelectedFile(fileName);
     }
-  };
+  }, []);
 
   const handleCallTreeView = () => {
     setShowCallTree(true);
     setCallTreeEntryPoint(null); // Reset entry point
-    setSelectedFile(null);
-    setSelectedFunction(null);
+    // If a function is selected, preserve it for Call Tree focus
+    setCallTreeSelectedFunction(selectedFunction);
+    // Don't clear selected file/function so Call Tree can use them
   };
   
   const handleCallTreeWithEntry = (functionName: string) => {
@@ -95,7 +97,15 @@ export function ProfilerDashboard({ data, onReset }: ProfilerDashboardProps) {
       
       <div className="flex-1 overflow-hidden">
         {showCallTree ? (
-          <CallTreeViewer data={data} entryPoint={callTreeEntryPoint} />
+          <CallTreeViewer 
+            data={data} 
+            entryPoint={callTreeEntryPoint || callTreeSelectedFunction}
+            onViewCode={(fileName, functionName) => {
+              setSelectedFile(fileName);
+              setSelectedFunction(functionName);
+              setShowCallTree(false);
+            }}
+          />
         ) : selectedFile && data.fileCoverage[selectedFile] ? (
           <FileViewer 
             filename={selectedFile}
