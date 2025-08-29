@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { CallTreeNode } from '@/types/profiler';
+import { CallTreeNode, CallInfo } from '@/types/profiler';
 import { cn } from '@/lib/utils';
 import { GitBranch } from 'lucide-react';
 
@@ -19,6 +19,7 @@ interface NodePosition {
   height: number;
   level: number;
   isPath: boolean;
+  callInfo?: CallInfo; // Call info from parent if this node was called
 }
 
 const MIN_NODE_WIDTH = 150;
@@ -42,10 +43,10 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
   // Calculate node width based on content
   const calculateNodeWidth = (node: CallTreeNode): number => {
     const nameWidth = calculateTextWidth(node.functionName);
-    const infoText = `${node.selfTime.toLocaleString()} cycles${node.children && node.children.length > 0 ? `, ${node.children.length} call${node.children.length === 1 ? '' : 's'}` : ''}`;
-    const infoWidth = calculateTextWidth(infoText, 12);
+    const metricsText = `S:${node.selfTime.toLocaleString()} I:${node.totalTime.toLocaleString()} C:${node.callCount}`;
+    const metricsWidth = calculateTextWidth(metricsText, 12);
     
-    const requiredWidth = Math.max(nameWidth, infoWidth) + NODE_PADDING * 2;
+    const requiredWidth = Math.max(nameWidth, metricsWidth) + NODE_PADDING * 2;
     return Math.max(MIN_NODE_WIDTH, Math.min(MAX_NODE_WIDTH, requiredWidth));
   };
   
@@ -211,6 +212,8 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
           if (parentPos) {
             // Center children under parent
             idealStartX = parentPos.x + parentPos.width / 2 - groupWidth / 2;
+            // But ensure we don't go too far left
+            idealStartX = Math.max(NODE_GAP, idealStartX);
           } else {
             // No parent, start from left
             idealStartX = NODE_GAP;
@@ -258,8 +261,9 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
           ? parentGroups[parentGroups.length - 1].startX + parentGroups[parentGroups.length - 1].width - parentGroups[0].startX
           : 0;
         
-        // Center the entire level
-        const centerOffset = (maxLevelWidth - adjustedLevelWidth) / 2;
+        // Don't center levels - keep nodes close to their parents
+        // This prevents parent nodes from being pushed off-screen
+        const centerOffset = 0;
         
         // Position nodes within each group
         parentGroups.forEach(group => {
@@ -274,6 +278,14 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
             const y = (level - 1) * LEVEL_HEIGHT;
             const width = nodeWidths[index];
             
+            // Find call info from parent if available
+            let callInfo: CallInfo | undefined;
+            if (item.parent && item.parent.calls) {
+              callInfo = item.parent.calls.find(call => 
+                call.targetFunction === item.node.functionName
+              );
+            }
+            
             const position: NodePosition = {
               node: item.node,
               x,
@@ -281,7 +293,8 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
               width,
               height: NODE_HEIGHT,
               level,
-              isPath: pathIds.has(item.node.id)
+              isPath: pathIds.has(item.node.id),
+              callInfo
             };
             
             positions.push(position);
@@ -299,9 +312,14 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
   }, [selectedNode, allNodes]);
   
   // Calculate SVG dimensions with proper margins
+  const minX = Math.min(...nodePositions.map(p => p.x), 0);
   const maxX = Math.max(...nodePositions.map(p => p.x + p.width), 0);
-  const svgWidth = maxX > 0 ? maxX + NODE_GAP * 2 : 600; // Minimum width of 600px
+  const svgWidth = maxX - minX > 0 ? maxX - minX + NODE_GAP * 2 : 600; // Minimum width of 600px
   const svgHeight = Math.max(...nodePositions.map(p => p.y + p.height), 100) + NODE_GAP;
+  
+  // Adjust viewBox to show all content
+  const viewBoxX = minX - NODE_GAP;
+  const viewBoxWidth = svgWidth;
   
   // Draw connections
   const connections: JSX.Element[] = [];
@@ -347,9 +365,14 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
   }
   
   return (
-    <div ref={containerRef} className="h-full bg-gray-50 overflow-auto flex justify-center">
-      <div className="p-6 min-w-max inline-block">
-        <svg width={svgWidth} height={svgHeight} className="overflow-visible">
+    <div ref={containerRef} className="h-full bg-gray-50 overflow-auto">
+      <div className="p-6 min-w-max">
+        <svg 
+          width={svgWidth} 
+          height={svgHeight} 
+          viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${svgHeight}`}
+          className="overflow-visible"
+        >
         <defs>
           <marker
             id="arrowhead"
@@ -399,8 +422,19 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
                   {pos.node.functionName}
                 </div>
                 <div className="text-xs text-gray-500 text-center mt-1">
-                  {pos.node.selfTime.toLocaleString()} cycles
-                  {pos.node.callCount > 1 && `, ${pos.node.callCount} calls`}
+                  {pos.callInfo ? (
+                    <div className="flex justify-center gap-1 text-[11px]">
+                      <span>S:{pos.node.selfTime.toLocaleString()}</span>
+                      <span>I:{(pos.callInfo.inclusiveEvents?.Cy || pos.callInfo.inclusiveEvents?.Ir || 0).toLocaleString()}</span>
+                      <span>C:{pos.callInfo.count}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-center gap-1 text-[11px]">
+                      <span>S:{pos.node.selfTime.toLocaleString()}</span>
+                      <span>I:{pos.node.totalTime.toLocaleString()}</span>
+                      <span>C:{pos.node.callCount}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </foreignObject>

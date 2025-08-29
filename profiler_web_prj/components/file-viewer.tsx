@@ -732,7 +732,33 @@ export function FileViewer({
                           ? "bg-gray-500 bg-opacity-20 border-gray-600" 
                           : "bg-gray-400 bg-opacity-15 border-gray-500"
                       )}></div>
-                      <span className="text-gray-600">Assembly View</span>
+                      <span className="text-gray-600">Non-Compiled</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "w-4 h-4 border rounded",
+                        isDarkTheme 
+                          ? "bg-yellow-900 bg-opacity-30 border-yellow-700" 
+                          : "bg-yellow-400 bg-opacity-20 border-yellow-500"
+                      )}></div>
+                      <span className="text-gray-600">Performance HotSpot</span>
+                      <select
+                        value={hotspotSettings.event}
+                        onChange={(e) => setHotspotSettings(prev => ({ ...prev, event: e.target.value }))}
+                        className="ml-2 px-2 py-1 text-xs border border-gray-300 rounded focus:border-blue-500 focus:outline-none"
+                      >
+                        {availableEvents.map(event => (
+                          <option key={event} value={event}>{event}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        value={hotspotSettings.threshold}
+                        onChange={(e) => setHotspotSettings(prev => ({ ...prev, threshold: parseInt(e.target.value) || 0 }))}
+                        className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:border-blue-500 focus:outline-none"
+                        placeholder="Threshold"
+                        min="0"
+                      />
                     </div>
                   </div>
                 </div>
@@ -1038,7 +1064,7 @@ export function FileViewer({
               <div className="absolute inset-x-0 top-1/2 transform -translate-y-1/2 h-0.5 bg-gray-500"></div>
             </div>
 
-            {/* Lower section - Assembly View */}
+            {/* Lower section - Non-Compiled View */}
             <div className={cn(
               "flex-1 overflow-hidden",
               isDarkTheme ? "bg-gray-900" : "bg-white"
