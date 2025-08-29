@@ -228,6 +228,7 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
         parentGroups.sort((a, b) => a.startX - b.startX);
         
         // Adjust positions to prevent overlaps
+        let minX = Number.MAX_VALUE;
         for (let i = 0; i < parentGroups.length; i++) {
           const group = parentGroups[i];
           
@@ -241,8 +242,15 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
             }
           }
           
-          // Ensure minimum margin from left
-          group.startX = Math.max(NODE_GAP, group.startX);
+          minX = Math.min(minX, group.startX);
+        }
+        
+        // Adjust all groups to ensure they start from NODE_GAP
+        if (minX < NODE_GAP) {
+          const adjustment = NODE_GAP - minX;
+          parentGroups.forEach(group => {
+            group.startX += adjustment;
+          });
         }
         
         // Calculate level width after adjustments
@@ -392,7 +400,7 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
                 </div>
                 <div className="text-xs text-gray-500 text-center mt-1">
                   {pos.node.selfTime.toLocaleString()} cycles
-                  {pos.node.children && pos.node.children.length > 0 && `, ${pos.node.children.length} call${pos.node.children.length === 1 ? '' : 's'}`}
+                  {pos.node.callCount > 1 && `, ${pos.node.callCount} calls`}
                 </div>
               </div>
             </foreignObject>

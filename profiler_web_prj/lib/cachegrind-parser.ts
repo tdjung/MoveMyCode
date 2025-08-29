@@ -20,6 +20,7 @@ export class CachegrindParser {
   private positions: string = 'line';
   private pendingCallFile?: string;
   private pendingCallFunction?: string;
+  private eventsOrder: string[] = [];
 
   constructor(
     private content: string,
@@ -55,6 +56,7 @@ export class CachegrindParser {
       // Parse header information
       if (trimmedLine.startsWith('events:')) {
         this.events = trimmedLine.split(':')[1].trim().split(/\s+/);
+        this.eventsOrder = [...this.events]; // Keep a copy of the event order
         continue;
       }
 
@@ -160,9 +162,23 @@ export class CachegrindParser {
         if (i + 1 < lines.length) {
           i++;
           const nextLine = lines[i].trim();
-          const pcMatch = nextLine.match(/^(0x[0-9a-fA-F]+)/);
+          const pcParts = nextLine.split(/\s+/);
+          const pcMatch = pcParts[0].match(/^(0x[0-9a-fA-F]+)/);
           if (pcMatch && currentFunction && currentFile) {
             const sourcePc = pcMatch[1];
+            
+            // Parse event counts from the rest of the line
+            const inclusiveEvents: Record<string, number> = {};
+            if (pcParts.length > 1 && this.eventsOrder.length > 0) {
+              for (let j = 1; j < pcParts.length && j - 1 < this.eventsOrder.length; j++) {
+                const eventName = this.eventsOrder[j - 1];
+                const value = parseInt(pcParts[j]) || 0;
+                if (value > 0) {
+                  inclusiveEvents[eventName] = value;
+                }
+              }
+            }
+            
             const currentFuncData = this.filesData[currentFile].functions[currentFunction];
             if (!currentFuncData.calls) {
               currentFuncData.calls = [];
@@ -171,7 +187,8 @@ export class CachegrindParser {
               targetFile: this.pendingCallFile,
               targetFunction: this.pendingCallFunction,
               count: callCount,
-              sourcePc: sourcePc
+              sourcePc: sourcePc,
+              inclusiveEvents: Object.keys(inclusiveEvents).length > 0 ? inclusiveEvents : undefined
             });
             // Reset pending call info
             this.pendingCallFile = undefined;

@@ -47,6 +47,7 @@ export interface CallInfo {
   count: number; // number of calls
   sourcePc: string; // PC where the call is made
   sourceLine?: number; // line number where the call is made
+  inclusiveEvents?: Record<string, number>; // inclusive event counts for this call
 }
 
 export interface LineData {

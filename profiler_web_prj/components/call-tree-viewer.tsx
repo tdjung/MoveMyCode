@@ -189,27 +189,20 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
     
     rootNodes.forEach(root => addToNodeMap(root));
 
-    // Calculate total cycles/instructions (including sub-calls) recursively
-    const calculateTotalCycles = (node: CallTreeNode, visited = new Set<string>()): number => {
+    // Calculate total cycles/instructions using self time + inclusive events from calls
+    const calculateTotalCycles = (node: CallTreeNode): number => {
       try {
         if (!node || typeof node !== 'object') return 0;
         
-        // Check if we've already calculated this node to prevent infinite recursion
-        const nodeKey = `${node.fileName}:${node.functionName}`;
-        if (visited.has(nodeKey)) {
-          return node.selfTime || 0; // Return only self time to avoid double counting
-        }
-        visited.add(nodeKey);
-        
         let totalCycles = node.selfTime || 0;
         
-        // Add cycles from all child calls
-        if (node.children && Array.isArray(node.children) && node.children.length > 0) {
-          for (const child of node.children) {
-            if (child && typeof child === 'object') {
-              // Calculate child's total only once
-              const childTotalCycles = calculateTotalCycles(child, new Set(visited));
-              totalCycles += childTotalCycles;
+        // Add inclusive cycles from all calls
+        if (node.calls && Array.isArray(node.calls)) {
+          for (const call of node.calls) {
+            if (call.inclusiveEvents) {
+              // Use Cy (cycles) first, fallback to Ir (instructions)
+              const inclusiveCycles = call.inclusiveEvents.Cy || call.inclusiveEvents.Ir || 0;
+              totalCycles += inclusiveCycles;
             }
           }
         }
@@ -224,11 +217,10 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
 
     // Update total cycles for all nodes
     try {
-      if (rootNodes && Array.isArray(rootNodes)) {
-        rootNodes.forEach(node => {
-          if (node) {
-            calculateTotalCycles(node);
-          }
+      if (nodeMap && nodeMap.size > 0) {
+        // Calculate total cycles for each node independently
+        nodeMap.forEach(node => {
+          calculateTotalCycles(node);
         });
       }
     } catch (error) {
@@ -454,6 +446,23 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
     const hasChildren = node.children && Array.isArray(node.children) && node.children.length > 0;
     // Keep node expanded if it's in expanded set
     const isExpanded = expandedNodes.has(node.id);
+    
+    const handleToggleExpand = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      
+      // Save current scroll position
+      const scrollContainer = e.currentTarget.closest('.overflow-y-auto');
+      const scrollTop = scrollContainer?.scrollTop || 0;
+      
+      toggleExpand(node.id);
+      
+      // Restore scroll position after React updates
+      if (scrollContainer) {
+        requestAnimationFrame(() => {
+          scrollContainer.scrollTop = scrollTop;
+        });
+      }
+    };
 
     return (
       <div className="select-none">
@@ -469,7 +478,7 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
           <div className="flex items-center flex-1">
             {hasChildren && (
               <button 
-                onClick={(e) => { e.stopPropagation(); toggleExpand(node.id); }}
+                onClick={handleToggleExpand}
                 className="mr-2 p-1 hover:bg-gray-200 rounded"
               >
                 {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
