@@ -41,9 +41,9 @@ async function* walkDirectory(dir: string): AsyncGenerator<string> {
   }
 }
 
-export async function listSourceFiles(): Promise<string[]> {
+export async function listSourceFiles(subdir: string = ''): Promise<string[]> {
   try {
-    const srcPath = path.join(process.cwd(), 'src');
+    const srcPath = path.join(process.cwd(), 'src', subdir);
     const sourceFiles: string[] = [];
     
     // Check if src directory exists
@@ -55,8 +55,8 @@ export async function listSourceFiles(): Promise<string[]> {
     
     // Recursively walk the src directory
     for await (const filePath of walkDirectory(srcPath)) {
-      // Store relative path from src directory
-      const relativePath = path.relative(srcPath, filePath);
+      // Store relative path from src directory root
+      const relativePath = path.relative(path.join(process.cwd(), 'src'), filePath);
       sourceFiles.push(relativePath);
     }
     

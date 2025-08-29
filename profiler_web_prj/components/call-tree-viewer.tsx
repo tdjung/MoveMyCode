@@ -356,7 +356,13 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint, onViewCode
         // If it's a function name, trigger a search instead
         setSearchInput(initialEntryPoint);
         setSearchTerm(initialEntryPoint);
-        // The search will be triggered by the search input change effect
+        // Also try to select the function directly for flow chart
+        const foundNode = Array.from(nodeMap.values()).find(
+          node => node.functionName === initialEntryPoint
+        );
+        if (foundNode) {
+          setSelectedFunction(foundNode);
+        }
       } else {
         // Otherwise, set it as entry point
         setEntryPoint(initialEntryPoint);
@@ -529,13 +535,44 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint, onViewCode
       }
       
       // Auto-expand nodes to show search results
-      if (results.size > 0 && results.size < 50) { // Limit expansion for performance
-        const ancestorsToExpand = searchEngine.getAncestorsToExpand(results, Array.from(nodeMap.values()));
+      if (results.size > 0) {
+        const nodesToExpand = new Set<string>();
+        
+        // For each search result, find all its ancestors
+        results.forEach(resultNode => {
+          let currentDepth = 0;
+          const visited = new Set<string>();
+          
+          // Find all parent nodes
+          const findParents = (targetId: string) => {
+            for (const [_, potentialParent] of nodeMap) {
+              if (potentialParent.children?.some(child => child.id === targetId)) {
+                if (!visited.has(potentialParent.id)) {
+                  visited.add(potentialParent.id);
+                  nodesToExpand.add(potentialParent.id);
+                  currentDepth++;
+                  // Recursively find parent's parents
+                  findParents(potentialParent.id);
+                }
+              }
+            }
+          };
+          
+          findParents(resultNode.id);
+        });
+        
+        // Expand all necessary nodes
         setExpandedNodes(prev => {
           const newExpanded = new Set(prev);
-          ancestorsToExpand.forEach(id => newExpanded.add(id));
+          nodesToExpand.forEach(id => newExpanded.add(id));
           return newExpanded;
         });
+        
+        // If we found results, select the first one
+        if (results.size === 1) {
+          const firstResult = Array.from(results)[0];
+          setSelectedFunction(firstResult);
+        }
       }
     } catch (error) {
       console.error('Error during search:', error);

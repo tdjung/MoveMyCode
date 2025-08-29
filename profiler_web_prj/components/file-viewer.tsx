@@ -173,6 +173,10 @@ interface FileViewerProps {
   fileData: FileCoverage;
   selectedFunction?: string | null;
   onCallTreeView?: (functionName: string) => void;
+  selectedEvents?: string[];
+  onSelectedEventsChange?: (events: string[]) => void;
+  eventAlignLeft?: boolean;
+  onEventAlignLeftChange?: (align: boolean) => void;
 }
 
 interface HotspotSettings {
@@ -180,7 +184,16 @@ interface HotspotSettings {
   threshold: number;
 }
 
-export function FileViewer({ filename, fileData, selectedFunction, onCallTreeView }: FileViewerProps) {
+export function FileViewer({ 
+  filename, 
+  fileData, 
+  selectedFunction, 
+  onCallTreeView,
+  selectedEvents: propsSelectedEvents,
+  onSelectedEventsChange,
+  eventAlignLeft: propsEventAlignLeft,
+  onEventAlignLeftChange
+}: FileViewerProps) {
   // Handle missing or empty source code
   const sourceCode = fileData?.sourceCode || '';
   const hasSourceCode = sourceCode && 
@@ -211,13 +224,30 @@ export function FileViewer({ filename, fileData, selectedFunction, onCallTreeVie
   const uncoveredSet = new Set(fileData?.uncoveredLineNumbers || []);
 
   // State for metric display
-  const [selectedEvents, setSelectedEvents] = useState<Set<string>>(new Set(['Ir']));
+  const [selectedEvents, setSelectedEvents] = useState<Set<string>>(
+    new Set(propsSelectedEvents && propsSelectedEvents.length > 0 ? propsSelectedEvents : ['Ir'])
+  );
+  
+  // Sync with props
+  useEffect(() => {
+    if (onSelectedEventsChange) {
+      onSelectedEventsChange(Array.from(selectedEvents));
+    }
+  }, [selectedEvents, onSelectedEventsChange]);
+  
   const [hotspotSettings, setHotspotSettings] = useState<HotspotSettings>({
     event: 'Ir',
     threshold: 10000
   });
   const [splitPosition, setSplitPosition] = useState(50); // Percentage for split view
-  const [eventAlignLeft, setEventAlignLeft] = useState(false); // Event count alignment
+  const [eventAlignLeft, setEventAlignLeft] = useState(propsEventAlignLeft ?? false); // Event count alignment
+  
+  // Sync alignment with props
+  useEffect(() => {
+    if (onEventAlignLeftChange && eventAlignLeft !== propsEventAlignLeft) {
+      onEventAlignLeftChange(eventAlignLeft);
+    }
+  }, [eventAlignLeft, onEventAlignLeftChange, propsEventAlignLeft]);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   

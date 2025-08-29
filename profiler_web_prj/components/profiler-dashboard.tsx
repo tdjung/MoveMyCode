@@ -21,6 +21,10 @@ export function ProfilerDashboard({ data, onReset }: ProfilerDashboardProps) {
   const [sidebarWidth, setSidebarWidth] = useState(320); // Default width
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
+  
+  // File viewer state to persist
+  const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
+  const [eventAlignLeft, setEventAlignLeft] = useState(false);
 
   const handleFunctionSelect = useCallback((funcName: string | null, fileName: string | null) => {
     setSelectedFunction(funcName);
@@ -112,6 +116,10 @@ export function ProfilerDashboard({ data, onReset }: ProfilerDashboardProps) {
             fileData={data.fileCoverage[selectedFile]}
             selectedFunction={selectedFunction}
             onCallTreeView={handleCallTreeWithEntry}
+            selectedEvents={selectedEvents}
+            onSelectedEventsChange={setSelectedEvents}
+            eventAlignLeft={eventAlignLeft}
+            onEventAlignLeftChange={setEventAlignLeft}
           />
         ) : selectedFile ? (
           <div className="flex items-center justify-center h-full">

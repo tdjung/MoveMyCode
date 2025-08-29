@@ -25,21 +25,36 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
   const [sortByInclusive, setSortByInclusive] = useState<boolean>(false); // For functions view
   const [viewMode, setViewMode] = useState<ViewMode>('files');
   const [showSettings, setShowSettings] = useState<boolean>(false);
-  const [srcSubdir, setSrcSubdir] = useState<string>('');
+  const [srcSubdirs, setSrcSubdirs] = useState<string[]>(['']); // Multiple source directories
   const [availableSubdirs, setAvailableSubdirs] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [objdumpCommand, setObjdumpCommand] = useState<string>('objdump');
   const [functionPadding, setFunctionPadding] = useState<number>(5);
   
   // Pagination state for functions list
-  const [pageSize, setPageSize] = useState<number>(50); // Default to 50 items per page
-  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [functionPageSize, setFunctionPageSize] = useState<number>(50); // Default to 50 items per page
+  const [functionCurrentPage, setFunctionCurrentPage] = useState<number>(1);
+  
+  // Pagination state for files list
+  const [filePageSize, setFilePageSize] = useState<number>(50); // Default to 50 items per page
+  const [fileCurrentPage, setFileCurrentPage] = useState<number>(1);
   
   // Load saved settings from localStorage and get available subdirectories
   useEffect(() => {
-    const savedSubdir = localStorage.getItem('profiler-src-subdir');
-    if (savedSubdir) {
-      setSrcSubdir(savedSubdir);
+    const savedSubdirs = localStorage.getItem('profiler-src-subdirs');
+    if (savedSubdirs) {
+      try {
+        const parsed = JSON.parse(savedSubdirs);
+        if (Array.isArray(parsed)) {
+          setSrcSubdirs(parsed);
+        }
+      } catch {
+        // Fallback to old single directory setting
+        const savedSubdir = localStorage.getItem('profiler-src-subdir');
+        if (savedSubdir) {
+          setSrcSubdirs([savedSubdir]);
+        }
+      }
     }
     
     const savedObjdump = localStorage.getItem('profiler-objdump-command');
@@ -179,27 +194,46 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
     );
   }, [sortedFunctions, searchQuery]);
   
+  // Calculate paginated files
+  const paginatedFiles = useMemo(() => {
+    if (filePageSize === -1) {
+      // Show all files
+      return filteredFiles;
+    }
+    
+    const startIndex = (fileCurrentPage - 1) * filePageSize;
+    const endIndex = startIndex + filePageSize;
+    return filteredFiles.slice(startIndex, endIndex);
+  }, [filteredFiles, fileCurrentPage, filePageSize]);
+  
+  // Calculate total file pages
+  const totalFilePages = useMemo(() => {
+    if (filePageSize === -1) return 1;
+    return Math.ceil(filteredFiles.length / filePageSize);
+  }, [filteredFiles, filePageSize]);
+
   // Calculate paginated functions
   const paginatedFunctions = useMemo(() => {
-    if (pageSize === -1) {
+    if (functionPageSize === -1) {
       // Show all functions
       return filteredFunctions;
     }
     
-    const startIndex = (currentPage - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
+    const startIndex = (functionCurrentPage - 1) * functionPageSize;
+    const endIndex = startIndex + functionPageSize;
     return filteredFunctions.slice(startIndex, endIndex);
-  }, [filteredFunctions, currentPage, pageSize]);
+  }, [filteredFunctions, functionCurrentPage, functionPageSize]);
   
-  // Calculate total pages
-  const totalPages = useMemo(() => {
-    if (pageSize === -1) return 1;
-    return Math.ceil(filteredFunctions.length / pageSize);
-  }, [filteredFunctions, pageSize]);
+  // Calculate total function pages
+  const totalFunctionPages = useMemo(() => {
+    if (functionPageSize === -1) return 1;
+    return Math.ceil(filteredFunctions.length / functionPageSize);
+  }, [filteredFunctions, functionPageSize]);
   
   // Reset page when search or sort changes
   useEffect(() => {
-    setCurrentPage(1);
+    setFileCurrentPage(1);
+    setFunctionCurrentPage(1);
   }, [searchQuery, sortBy, sortAscending, sortByInclusive]);
 
   return (
@@ -397,7 +431,7 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
         <div className="px-2 pb-4">
           {viewMode === 'files' ? (
             // Files list
-            filteredFiles.map(([filename, fileData]) => (
+            paginatedFiles.map(([filename, fileData]) => (
               <button
                 key={filename}
                 onClick={() => {
@@ -499,37 +533,49 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
           )}
         </div>
         
-        {/* Pagination Controls for Functions */}
-        {viewMode === 'functions' && filteredFunctions.length > 10 && (
+        {/* Pagination Controls */}
+        {((viewMode === 'files' && filteredFiles.length > 10) || (viewMode === 'functions' && filteredFunctions.length > 10)) && (
           <div className="px-4 py-3 border-t border-gray-200 space-y-2">
             {/* Page size selector */}
             <div className="flex items-center justify-between">
               <label className="text-sm text-gray-600">Items per page:</label>
               <select
-                value={pageSize}
+                value={viewMode === 'files' ? filePageSize : functionPageSize}
                 onChange={(e) => {
                   const newSize = Number(e.target.value);
-                  setPageSize(newSize);
-                  setCurrentPage(1);
+                  if (viewMode === 'files') {
+                    setFilePageSize(newSize);
+                    setFileCurrentPage(1);
+                  } else {
+                    setFunctionPageSize(newSize);
+                    setFunctionCurrentPage(1);
+                  }
                 }}
                 className="text-sm px-2 py-1 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value={10}>10</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
-                <option value={-1}>All ({filteredFunctions.length})</option>
+                <option value={-1}>All ({viewMode === 'files' ? filteredFiles.length : filteredFunctions.length})</option>
               </select>
             </div>
             
             {/* Page navigation */}
-            {pageSize !== -1 && totalPages > 1 && (
+            {((viewMode === 'files' && filePageSize !== -1 && totalFilePages > 1) || 
+              (viewMode === 'functions' && functionPageSize !== -1 && totalFunctionPages > 1)) && (
               <div className="flex items-center justify-between">
                 <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
+                  onClick={() => {
+                    if (viewMode === 'files') {
+                      setFileCurrentPage(prev => Math.max(1, prev - 1));
+                    } else {
+                      setFunctionCurrentPage(prev => Math.max(1, prev - 1));
+                    }
+                  }}
+                  disabled={viewMode === 'files' ? fileCurrentPage === 1 : functionCurrentPage === 1}
                   className={cn(
                     "px-2 py-1 text-sm rounded",
-                    currentPage === 1
+                    (viewMode === 'files' ? fileCurrentPage === 1 : functionCurrentPage === 1)
                       ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                       : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                   )}
@@ -538,15 +584,21 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                 </button>
                 
                 <span className="text-sm text-gray-600">
-                  Page {currentPage} of {totalPages}
+                  Page {viewMode === 'files' ? fileCurrentPage : functionCurrentPage} of {viewMode === 'files' ? totalFilePages : totalFunctionPages}
                 </span>
                 
                 <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
+                  onClick={() => {
+                    if (viewMode === 'files') {
+                      setFileCurrentPage(prev => Math.min(totalFilePages, prev + 1));
+                    } else {
+                      setFunctionCurrentPage(prev => Math.min(totalFunctionPages, prev + 1));
+                    }
+                  }}
+                  disabled={viewMode === 'files' ? fileCurrentPage === totalFilePages : functionCurrentPage === totalFunctionPages}
                   className={cn(
                     "px-2 py-1 text-sm rounded",
-                    currentPage === totalPages
+                    (viewMode === 'files' ? fileCurrentPage === totalFilePages : functionCurrentPage === totalFunctionPages)
                       ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                       : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                   )}
@@ -558,7 +610,11 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
             
             {/* Results info */}
             <div className="text-center text-xs text-gray-500">
-              Showing {pageSize === -1 ? filteredFunctions.length : Math.min(pageSize, filteredFunctions.length - (currentPage - 1) * pageSize)} of {filteredFunctions.length} functions
+              {viewMode === 'files' ? (
+                `Showing ${filePageSize === -1 ? filteredFiles.length : Math.min(filePageSize, filteredFiles.length - (fileCurrentPage - 1) * filePageSize)} of ${filteredFiles.length} files`
+              ) : (
+                `Showing ${functionPageSize === -1 ? filteredFunctions.length : Math.min(functionPageSize, filteredFunctions.length - (functionCurrentPage - 1) * functionPageSize)} of ${filteredFunctions.length} functions`
+              )}
             </div>
           </div>
         )}
@@ -581,20 +637,47 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Source Directory
+                  Source Directories
                 </label>
-                <select
-                  value={srcSubdir}
-                  onChange={(e) => setSrcSubdir(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">src/ (root)</option>
-                  {availableSubdirs.filter(dir => dir !== '').map(dir => (
-                    <option key={dir} value={dir}>src/{dir}/</option>
+                <div className="space-y-2">
+                  {srcSubdirs.map((subdir, index) => (
+                    <div key={index} className="flex gap-2">
+                      <select
+                        value={subdir}
+                        onChange={(e) => {
+                          const newSubdirs = [...srcSubdirs];
+                          newSubdirs[index] = e.target.value;
+                          setSrcSubdirs(newSubdirs);
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">src/ (root)</option>
+                        {availableSubdirs.filter(dir => dir !== '').map(dir => (
+                          <option key={dir} value={dir}>src/{dir}/</option>
+                        ))}
+                      </select>
+                      {srcSubdirs.length > 1 && (
+                        <button
+                          onClick={() => {
+                            const newSubdirs = srcSubdirs.filter((_, i) => i !== index);
+                            setSrcSubdirs(newSubdirs);
+                          }}
+                          className="px-3 py-2 text-red-600 hover:bg-red-50 border border-red-300 rounded-lg transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   ))}
-                </select>
+                  <button
+                    onClick={() => setSrcSubdirs([...srcSubdirs, ''])}
+                    className="w-full px-3 py-2 text-blue-600 hover:bg-blue-50 border border-blue-300 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    <span>+</span> Add Directory
+                  </button>
+                </div>
                 <p className="mt-1 text-xs text-gray-500">
-                  Select the src subdirectory where your source files are located. The system will intelligently map file paths to this directory.
+                  Add multiple source directories where your source files are located. The system will search all directories.
                 </p>
               </div>
               
@@ -642,7 +725,7 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
               <button
                 onClick={() => {
                   // Save settings to localStorage
-                  localStorage.setItem('profiler-src-subdir', srcSubdir);
+                  localStorage.setItem('profiler-src-subdirs', JSON.stringify(srcSubdirs));
                   localStorage.setItem('profiler-objdump-command', objdumpCommand);
                   localStorage.setItem('profiler-function-padding', functionPadding.toString());
                   setShowSettings(false);

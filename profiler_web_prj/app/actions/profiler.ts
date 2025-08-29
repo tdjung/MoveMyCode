@@ -14,6 +14,7 @@ export async function parseCachegrindFile(formData: FormData): Promise<{
 }> {
   try {
     const file = formData.get('file') as File;
+    const srcSubdirsJson = formData.get('srcSubdirs') as string | null;
     
     if (!file) {
       return { success: false, error: 'No file provided' };
@@ -25,18 +26,34 @@ export async function parseCachegrindFile(formData: FormData): Promise<{
 
     const content = await file.text();
     
-    // Read source files from src directory (including subdirectories)
-    const sourceFiles: Record<string, string> = {};
-    const srcFileList = await listSourceFiles();
+    // Parse source directories configuration
+    let srcSubdirs: string[] = [''];
+    if (srcSubdirsJson) {
+      try {
+        const parsed = JSON.parse(srcSubdirsJson);
+        if (Array.isArray(parsed)) {
+          srcSubdirs = parsed;
+        }
+      } catch {
+        // Use default if parsing fails
+      }
+    }
     
-    for (const srcFile of srcFileList) {
-      const fileContent = await readSourceFile(srcFile);
-      if (fileContent) {
-        // Store with full relative path (e.g., "subdir/file.c" or just "file.c")
-        sourceFiles[srcFile] = fileContent;
-        
-        // Also store with "src/" prefix for path resolution
-        sourceFiles[`src/${srcFile}`] = fileContent;
+    // Read source files from all configured directories
+    const sourceFiles: Record<string, string> = {};
+    
+    for (const subdir of srcSubdirs) {
+      const srcFileList = await listSourceFiles(subdir);
+      
+      for (const srcFile of srcFileList) {
+        const fileContent = await readSourceFile(srcFile);
+        if (fileContent) {
+          // Store with full relative path
+          sourceFiles[srcFile] = fileContent;
+          
+          // Also store with "src/" prefix for path resolution
+          sourceFiles[`src/${srcFile}`] = fileContent;
+        }
       }
     }
     

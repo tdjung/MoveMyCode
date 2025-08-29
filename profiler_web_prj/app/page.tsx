@@ -23,6 +23,12 @@ export default function Home() {
       const formData = new FormData();
       formData.append('file', file);
       
+      // Add source directories configuration
+      const savedSubdirs = localStorage.getItem('profiler-src-subdirs');
+      if (savedSubdirs) {
+        formData.append('srcSubdirs', savedSubdirs);
+      }
+      
       const result = await parseCachegrindFile(formData);
       
       if (result.success && result.data) {
@@ -58,6 +64,12 @@ export default function Home() {
       // Parse the file
       const formData = new FormData();
       formData.append('file', file);
+      
+      // Add source directories configuration
+      const savedSubdirs = localStorage.getItem('profiler-src-subdirs');
+      if (savedSubdirs) {
+        formData.append('srcSubdirs', savedSubdirs);
+      }
       
       const result = await parseCachegrindFile(formData);
       
