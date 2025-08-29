@@ -55,9 +55,20 @@ export function ServerFileBrowser({ onFileSelect, isProcessing, initialDirectory
 
   const navigateToDirectory = (dirName: string) => {
     if (dirName === '..') {
+      // Prevent navigation above output directory
+      if (currentPath === 'output') {
+        // Can't go above output
+        return;
+      }
       const parts = currentPath.split('/').filter(Boolean);
       parts.pop();
-      setCurrentPath(parts.join('/') || '.');
+      const newPath = parts.join('/');
+      // Ensure we don't go above output
+      if (!newPath || !newPath.startsWith('output')) {
+        setCurrentPath('output');
+      } else {
+        setCurrentPath(newPath);
+      }
     } else {
       const newPath = currentPath ? `${currentPath}/${dirName}` : dirName;
       setCurrentPath(newPath);
@@ -92,7 +103,7 @@ export function ServerFileBrowser({ onFileSelect, isProcessing, initialDirectory
         </div>
 
         {/* Navigation */}
-        {currentPath && (
+        {currentPath && currentPath !== 'output' && (
           <div className="px-6 py-3 border-b border-gray-100">
             <button
               onClick={() => navigateToDirectory('..')}

@@ -19,15 +19,19 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint, onViewCode
   const [filterDepth, setFilterDepth] = useState(10);
   const [customDepth, setCustomDepth] = useState(1);
   const [useCustomDepth, setUseCustomDepth] = useState(false);
+  
+  // Check if initialEntryPoint is a function name (no path separator)
+  const isFunctionName = initialEntryPoint && !initialEntryPoint.includes('/') && !initialEntryPoint.includes('\\');
+  
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchInput, setSearchInput] = useState('');
+  const [searchInput, setSearchInput] = useState(isFunctionName ? initialEntryPoint : '');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [selectedFunction, setSelectedFunction] = useState<CallTreeNode | null>(null);
-  const [entryPoint, setEntryPoint] = useState(initialEntryPoint || '');
-  const [entryPointInput, setEntryPointInput] = useState(initialEntryPoint || '');
+  const [entryPoint, setEntryPoint] = useState(isFunctionName ? '' : (initialEntryPoint || ''));
+  const [entryPointInput, setEntryPointInput] = useState(isFunctionName ? '' : (initialEntryPoint || ''));
   const [searchResults, setSearchResults] = useState<Set<CallTreeNode> | null>(null);
   const [manualSearchMode, setManualSearchMode] = useState(true); // Default to manual mode for better performance
-  const [showFlowChart, setShowFlowChart] = useState(false);
+  const [showFlowChart, setShowFlowChart] = useState(true);
   const [splitPosition, setSplitPosition] = useState(50); // Percentage for split view
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -346,15 +350,25 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint, onViewCode
   // Set initial entry point if provided
   useEffect(() => {
     if (initialEntryPoint) {
-      setEntryPoint(initialEntryPoint);
-      setEntryPointInput(initialEntryPoint);
+      const isFunctionName = !initialEntryPoint.includes('/') && !initialEntryPoint.includes('\\');
       
-      // If entry point is a function name, try to find and select it
-      const foundNode = Array.from(nodeMap.values()).find(
-        node => node.functionName === initialEntryPoint
-      );
-      if (foundNode) {
-        setSelectedFunction(foundNode);
+      if (isFunctionName) {
+        // If it's a function name, trigger a search instead
+        setSearchInput(initialEntryPoint);
+        setSearchTerm(initialEntryPoint);
+        // The search will be triggered by the search input change effect
+      } else {
+        // Otherwise, set it as entry point
+        setEntryPoint(initialEntryPoint);
+        setEntryPointInput(initialEntryPoint);
+        
+        // If entry point is a function name, try to find and select it
+        const foundNode = Array.from(nodeMap.values()).find(
+          node => node.functionName === initialEntryPoint
+        );
+        if (foundNode) {
+          setSelectedFunction(foundNode);
+        }
       }
     }
   }, [initialEntryPoint, nodeMap]);
@@ -457,6 +471,33 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint, onViewCode
     return 'bg-white border-gray-200';
   };
 
+  // Helper function to calculate node depth
+  const calculateNodeDepth = useCallback((node: CallTreeNode): number => {
+    let depth = 0;
+    let currentNode = node;
+    const visited = new Set<string>();
+    
+    // Find parent by checking all nodes
+    while (currentNode) {
+      if (visited.has(currentNode.id)) break; // Prevent infinite loop
+      visited.add(currentNode.id);
+      
+      let parentFound = false;
+      for (const [_, potentialParent] of nodeMap) {
+        if (potentialParent.children?.some(child => child.id === currentNode.id)) {
+          currentNode = potentialParent;
+          depth++;
+          parentFound = true;
+          break;
+        }
+      }
+      
+      if (!parentFound) break;
+    }
+    
+    return depth;
+  }, [nodeMap]);
+
   // Manual search function
   const performSearch = useCallback((term: string) => {
     try {
@@ -469,6 +510,23 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint, onViewCode
       const results = searchEngine.search(term);
       console.log('Search results:', results.size);
       setSearchResults(results);
+      
+      // Calculate maximum depth of search results
+      if (results.size > 0) {
+        let maxDepth = 0;
+        results.forEach(node => {
+          const depth = calculateNodeDepth(node);
+          if (depth > maxDepth) {
+            maxDepth = depth;
+          }
+        });
+        
+        // Auto-adjust depth limit if needed
+        if (maxDepth > filterDepth) {
+          console.log(`Auto-adjusting depth limit from ${filterDepth} to ${maxDepth + 1}`);
+          setFilterDepth(maxDepth + 1); // +1 to ensure the result is visible
+        }
+      }
       
       // Auto-expand nodes to show search results
       if (results.size > 0 && results.size < 50) { // Limit expansion for performance
@@ -483,7 +541,7 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint, onViewCode
       console.error('Error during search:', error);
       setSearchResults(null);
     }
-  }, [searchEngine, nodeMap]);
+  }, [searchEngine, nodeMap, calculateNodeDepth, filterDepth]);
 
   // Debounced search for auto mode
   const debouncedSearch = useMemo(
@@ -498,6 +556,19 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint, onViewCode
       debouncedSearch(searchInput);
     }
   }, [searchInput, debouncedSearch, manualSearchMode]);
+  
+  // Handle initial search for function names
+  useEffect(() => {
+    // Trigger search for initial function name after a short delay
+    if (searchInput && initialEntryPoint && !initialEntryPoint.includes('/') && !initialEntryPoint.includes('\\')) {
+      const timer = setTimeout(() => {
+        if (performSearch) {
+          performSearch(searchInput);
+        }
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, []); // Run only once on mount
   
   // Handle manual search
   const handleManualSearch = useCallback(() => {

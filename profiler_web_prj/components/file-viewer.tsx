@@ -226,7 +226,7 @@ export function FileViewer({ filename, fileData, selectedFunction, onCallTreeVie
   const [highlightedAssemblyPc, setHighlightedAssemblyPc] = useState<string | null>(null);
   
   // State for theme
-  const [isDarkTheme, setIsDarkTheme] = useState(true);
+  const [isDarkTheme, setIsDarkTheme] = useState(false);
   const [syntaxOnlyMode, setSyntaxOnlyMode] = useState(false);
   
   // State for collapsible header

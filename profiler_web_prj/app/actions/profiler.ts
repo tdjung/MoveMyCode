@@ -70,14 +70,21 @@ export async function listServerFiles(directory: string = 'output'): Promise<{
   try {
     // Use absolute path from project root
     const projectRoot = process.cwd();
+    const outputRoot = path.join(projectRoot, 'output');
     const fullPath = path.join(projectRoot, directory);
     
     // Security check - ensure we're not going outside project directory
     const resolvedPath = path.resolve(fullPath);
     const resolvedRoot = path.resolve(projectRoot);
+    const resolvedOutput = path.resolve(outputRoot);
     
     if (!resolvedPath.startsWith(resolvedRoot)) {
       return { success: false, error: 'Access denied: Path is outside project directory' };
+    }
+    
+    // Additional check - ensure we're not going above output directory
+    if (!resolvedPath.startsWith(resolvedOutput)) {
+      return { success: false, error: 'Access denied: Path is outside output directory' };
     }
     
     // Check if directory exists
@@ -136,14 +143,21 @@ export async function readServerFile(filePath: string): Promise<{
 }> {
   try {
     const projectRoot = process.cwd();
+    const outputRoot = path.join(projectRoot, 'output');
     const fullPath = path.join(projectRoot, filePath);
     
     // Security check
     const resolvedPath = path.resolve(fullPath);
     const resolvedRoot = path.resolve(projectRoot);
+    const resolvedOutput = path.resolve(outputRoot);
     
     if (!resolvedPath.startsWith(resolvedRoot)) {
       return { success: false, error: 'Access denied: Path is outside project directory' };
+    }
+    
+    // Additional check - ensure we're not going above output directory
+    if (!resolvedPath.startsWith(resolvedOutput)) {
+      return { success: false, error: 'Access denied: Path is outside output directory' };
     }
     
     // Check if file exists

@@ -31,6 +31,10 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
   const [objdumpCommand, setObjdumpCommand] = useState<string>('objdump');
   const [functionPadding, setFunctionPadding] = useState<number>(5);
   
+  // Pagination state for functions list
+  const [pageSize, setPageSize] = useState<number>(50); // Default to 50 items per page
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  
   // Load saved settings from localStorage and get available subdirectories
   useEffect(() => {
     const savedSubdir = localStorage.getItem('profiler-src-subdir');
@@ -174,6 +178,29 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
       (func.file.split('/').pop() || func.file).toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [sortedFunctions, searchQuery]);
+  
+  // Calculate paginated functions
+  const paginatedFunctions = useMemo(() => {
+    if (pageSize === -1) {
+      // Show all functions
+      return filteredFunctions;
+    }
+    
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return filteredFunctions.slice(startIndex, endIndex);
+  }, [filteredFunctions, currentPage, pageSize]);
+  
+  // Calculate total pages
+  const totalPages = useMemo(() => {
+    if (pageSize === -1) return 1;
+    return Math.ceil(filteredFunctions.length / pageSize);
+  }, [filteredFunctions, pageSize]);
+  
+  // Reset page when search or sort changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, sortBy, sortAscending, sortByInclusive]);
 
   return (
     <div className="w-full bg-white border-r border-gray-200 flex flex-col h-full">
@@ -411,7 +438,7 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
             ))
           ) : (
             // Functions list
-            filteredFunctions.map((func) => (
+            paginatedFunctions.map((func) => (
               <button
                 key={`${func.file}:${func.name}`}
                 onClick={() => {
@@ -471,6 +498,70 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
             ))
           )}
         </div>
+        
+        {/* Pagination Controls for Functions */}
+        {viewMode === 'functions' && filteredFunctions.length > 10 && (
+          <div className="px-4 py-3 border-t border-gray-200 space-y-2">
+            {/* Page size selector */}
+            <div className="flex items-center justify-between">
+              <label className="text-sm text-gray-600">Items per page:</label>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  const newSize = Number(e.target.value);
+                  setPageSize(newSize);
+                  setCurrentPage(1);
+                }}
+                className="text-sm px-2 py-1 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value={10}>10</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={-1}>All ({filteredFunctions.length})</option>
+              </select>
+            </div>
+            
+            {/* Page navigation */}
+            {pageSize !== -1 && totalPages > 1 && (
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className={cn(
+                    "px-2 py-1 text-sm rounded",
+                    currentPage === 1
+                      ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  )}
+                >
+                  Previous
+                </button>
+                
+                <span className="text-sm text-gray-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className={cn(
+                    "px-2 py-1 text-sm rounded",
+                    currentPage === totalPages
+                      ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  )}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+            
+            {/* Results info */}
+            <div className="text-center text-xs text-gray-500">
+              Showing {pageSize === -1 ? filteredFunctions.length : Math.min(pageSize, filteredFunctions.length - (currentPage - 1) * pageSize)} of {filteredFunctions.length} functions
+            </div>
+          </div>
+        )}
       </div>
       
       {/* Settings Modal */}
