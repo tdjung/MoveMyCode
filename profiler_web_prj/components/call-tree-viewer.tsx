@@ -503,7 +503,11 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
               <div className="flex items-center gap-4 text-xs text-gray-600 mt-1">
                 <span className="flex items-center gap-1">
                   <Clock size={12} />
-                  {node.selfTime.toLocaleString()} {metricName}
+                  self: {node.selfTime.toLocaleString()} {metricName}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock size={12} />
+                  incl: {node.totalTime.toLocaleString()} {metricName}
                 </span>
                 <span className="flex items-center gap-1">
                   <Cpu size={12} />

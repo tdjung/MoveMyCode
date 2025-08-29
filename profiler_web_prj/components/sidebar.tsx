@@ -81,14 +81,29 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
   
   // Get all functions across all files
   const getAllFunctions = () => {
-    const functions: Array<{ name: string; file: string; data: any }> = [];
+    const functions: Array<{ name: string; file: string; data: any; inclusiveTotals: Record<string, number> }> = [];
     
     Object.entries(data.fileCoverage).forEach(([filename, fileData]) => {
       Object.entries(fileData.functions || {}).forEach(([funcName, funcData]) => {
+        // Calculate inclusive totals
+        const inclusiveTotals: Record<string, number> = { ...funcData.totals };
+        
+        // Add inclusive counts from calls
+        if (funcData.calls && Array.isArray(funcData.calls)) {
+          funcData.calls.forEach((call: any) => {
+            if (call.inclusiveEvents) {
+              Object.entries(call.inclusiveEvents).forEach(([event, count]) => {
+                inclusiveTotals[event] = (inclusiveTotals[event] || 0) + (count as number);
+              });
+            }
+          });
+        }
+        
         functions.push({
           name: funcName,
           file: filename,
-          data: funcData
+          data: funcData,
+          inclusiveTotals
         });
       });
     });
@@ -336,10 +351,10 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                     : "hover:bg-gray-50"
                 )}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <Code2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <span className="text-sm font-medium text-gray-700 block truncate">
                         {func.name}
                       </span>
@@ -348,18 +363,34 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                       </span>
                     </div>
                   </div>
-                  <span className={cn(
-                    "text-xs font-medium px-2 py-1 rounded-full",
-                    sortBy === 'coverage' ? [
-                      getCoverageColor(func.data.coveragePercentage),
-                      getCoverageBgColor(func.data.coveragePercentage)
-                    ] : "text-gray-700 bg-gray-100"
-                  )}>
-                    {sortBy === 'coverage' 
-                      ? formatPercentage(func.data.coveragePercentage)
-                      : (func.data.totals[sortBy] || 0).toLocaleString()
-                    }
-                  </span>
+                  <div className="flex flex-col items-end flex-shrink-0">
+                    <span 
+                      className={cn(
+                        "text-xs font-medium px-2 py-0.5 rounded-full mb-0.5",
+                        sortBy === 'coverage' ? [
+                          getCoverageColor(func.data.coveragePercentage),
+                          getCoverageBgColor(func.data.coveragePercentage)
+                        ] : "text-gray-700 bg-gray-100"
+                      )}
+                      title={sortBy === 'coverage' 
+                        ? 'Coverage percentage'
+                        : `Self ${getMetricDescription(sortBy)}: ${(func.data.totals[sortBy] || 0).toLocaleString()}`
+                      }
+                    >
+                      {sortBy === 'coverage' 
+                        ? formatPercentage(func.data.coveragePercentage)
+                        : (func.data.totals[sortBy] || 0).toLocaleString()
+                      }
+                    </span>
+                    {sortBy !== 'coverage' && (
+                      <span 
+                        className="text-xs font-medium px-2 py-0.5 rounded-full text-gray-600 bg-gray-50"
+                        title={`Inclusive ${getMetricDescription(sortBy)}: ${(func.inclusiveTotals[sortBy] || 0).toLocaleString()}`}
+                      >
+                        {(func.inclusiveTotals[sortBy] || 0).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="ml-6 mt-1">
                   <span className="text-xs text-gray-500">

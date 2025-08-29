@@ -168,10 +168,12 @@ export class CachegrindParser {
             const sourcePc = pcMatch[1];
             
             // Parse event counts from the rest of the line
+            // Format: <caller_pc> <caller_line> <event_0> <event_1> ...
             const inclusiveEvents: Record<string, number> = {};
-            if (pcParts.length > 1 && this.eventsOrder.length > 0) {
-              for (let j = 1; j < pcParts.length && j - 1 < this.eventsOrder.length; j++) {
-                const eventName = this.eventsOrder[j - 1];
+            if (pcParts.length > 2 && this.eventsOrder.length > 0) {
+              // Event values start at index 2 (after caller_pc and caller_line)
+              for (let j = 2; j < pcParts.length && j - 2 < this.eventsOrder.length; j++) {
+                const eventName = this.eventsOrder[j - 2];
                 const value = parseInt(pcParts[j]) || 0;
                 if (value > 0) {
                   inclusiveEvents[eventName] = value;
