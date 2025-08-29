@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { FileText, Activity, BarChart3, ChevronDown, Code2, FolderOpen, ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, GitBranch, Settings, X, Search } from 'lucide-react';
 import { availableSrcSubdirectories } from '@/lib/src-directories';
 import { cn, formatPercentage, getCoverageColor, getCoverageBgColor } from '@/lib/utils';
@@ -22,6 +22,7 @@ type ViewMode = 'files' | 'functions';
 export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, onFunctionSelect, onReset, onCallTreeView, isCallTreeActive = false }: SidebarProps) {
   const [sortBy, setSortBy] = useState<string>('coverage');
   const [sortAscending, setSortAscending] = useState<boolean>(false);
+  const [sortByInclusive, setSortByInclusive] = useState<boolean>(false); // For functions view
   const [viewMode, setViewMode] = useState<ViewMode>('files');
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [srcSubdir, setSrcSubdir] = useState<string>('');
@@ -79,10 +80,11 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
     return descriptions[metric] || metric;
   };
   
-  // Get all functions across all files
-  const getAllFunctions = () => {
-    const functions: Array<{ name: string; file: string; data: any; inclusiveTotals: Record<string, number> }> = [];
+  // Cache calculated inclusive totals and call counts
+  const functionsWithInclusiveTotals = useMemo(() => {
+    const functions: Array<{ name: string; file: string; data: any; inclusiveTotals: Record<string, number>; callCount: number }> = [];
     
+    // First pass: collect all functions and calculate inclusive totals
     Object.entries(data.fileCoverage).forEach(([filename, fileData]) => {
       Object.entries(fileData.functions || {}).forEach(([funcName, funcData]) => {
         // Calculate inclusive totals
@@ -103,18 +105,48 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
           name: funcName,
           file: filename,
           data: funcData,
-          inclusiveTotals
+          inclusiveTotals,
+          callCount: 0 // Will be calculated in second pass
         });
       });
     });
     
-    return functions.sort((a, b) => {
+    // Second pass: calculate how many times each function is called
+    Object.entries(data.fileCoverage).forEach(([_, fileData]) => {
+      Object.entries(fileData.functions || {}).forEach(([__, funcData]) => {
+        if (funcData.calls && Array.isArray(funcData.calls)) {
+          funcData.calls.forEach((call: any) => {
+            if (call.targetFunction) {
+              // Find the target function and increment its call count
+              const targetFunc = functions.find(f => 
+                f.name === call.targetFunction && 
+                (call.targetFile ? f.file === call.targetFile : true)
+              );
+              if (targetFunc) {
+                targetFunc.callCount += call.count || 1;
+              }
+            }
+          });
+        }
+      });
+    });
+    
+    return functions;
+  }, [data]);
+
+  // Get all functions across all files with sorting
+  const getAllFunctions = () => {
+    return functionsWithInclusiveTotals.sort((a, b) => {
       const aValue = sortBy === 'coverage' 
         ? a.data.coveragePercentage 
-        : (a.data.totals[sortBy] || 0);
+        : sortByInclusive && sortBy !== 'coverage'
+          ? (a.inclusiveTotals[sortBy] || 0)
+          : (a.data.totals[sortBy] || 0);
       const bValue = sortBy === 'coverage' 
         ? b.data.coveragePercentage 
-        : (b.data.totals[sortBy] || 0);
+        : sortByInclusive && sortBy !== 'coverage'
+          ? (b.inclusiveTotals[sortBy] || 0)
+          : (b.data.totals[sortBy] || 0);
       return sortAscending ? aValue - bValue : bValue - aValue;
     });
   };
@@ -139,7 +171,7 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
   );
 
   return (
-    <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
+    <div className="w-full bg-white border-r border-gray-200 flex flex-col h-full">
       {/* Header */}
       <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-purple-600 text-white">
         <h1 className="text-xl font-bold mb-2">Profiler Analysis</h1>
@@ -271,6 +303,15 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
               </select>
               <ChevronDown className="absolute right-1 top-1.5 w-3 h-3 text-gray-500 pointer-events-none" />
             </div>
+            {viewMode === 'functions' && sortBy !== 'coverage' && (
+              <button
+                onClick={() => setSortByInclusive(!sortByInclusive)}
+                className="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 transition-colors"
+                title={sortByInclusive ? "Sort by self time" : "Sort by inclusive time"}
+              >
+                {sortByInclusive ? 'Incl' : 'Self'}
+              </button>
+            )}
             <button
               onClick={() => setSortAscending(!sortAscending)}
               className="p-1 border border-gray-300 rounded hover:bg-gray-100 transition-colors"
@@ -284,6 +325,41 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Column Headers */}
+      <div className="px-2 pb-1">
+        {viewMode === 'files' ? (
+          <div className="flex items-center gap-2 px-3 py-1 text-xs text-gray-500 font-medium border-b border-gray-200">
+            <FileText className="w-3 h-3 opacity-0" />
+            {sortBy === 'coverage' ? (
+              <>
+                <span className="w-12 text-center">%</span>
+                <span className="w-16 text-center">Lines</span>
+              </>
+            ) : (
+              <span className="w-20 text-right">{getMetricDescription(sortBy)}</span>
+            )}
+            <span className="flex-1">File Name</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-1 text-xs text-gray-500 font-medium border-b border-gray-200">
+            <Code2 className="w-3 h-3 opacity-0" />
+            {sortBy === 'coverage' ? (
+              <>
+                <span className="w-12 text-center">%</span>
+                <span className="w-16 text-center">Lines</span>
+              </>
+            ) : (
+              <>
+                <span className="w-10 text-right">Calls</span>
+                <span className="text-right" style={{ minWidth: '60px' }}>Inclusive</span>
+                <span className="text-right" style={{ minWidth: '60px' }}>Self</span>
+              </>
+            )}
+            <span className="flex-1">Function Name</span>
+          </div>
+        )}
       </div>
 
       {/* List */}
@@ -305,32 +381,28 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                     : "hover:bg-gray-50"
                 )}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                    <span className="text-sm font-medium text-gray-700 truncate" title={filename}>
-                      {filename.split('/').pop() || filename}
+                <div className="flex items-center gap-2">
+                  <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                  {sortBy === 'coverage' ? (
+                    <>
+                      <span className={cn(
+                        "text-xs font-medium px-1.5 py-0.5 rounded w-12 text-center",
+                        getCoverageColor(fileData.coveragePercentage),
+                        getCoverageBgColor(fileData.coveragePercentage)
+                      )}>
+                        {formatPercentage(fileData.coveragePercentage)}
+                      </span>
+                      <span className="text-xs text-gray-500 w-16 text-center">
+                        {fileData.coveredLines}/{fileData.compiledLines}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs font-medium text-gray-700 w-20 text-right">
+                      {getFileMetric(fileData, sortBy).toLocaleString()}
                     </span>
-                  </div>
-                  <span className={cn(
-                    "text-xs font-medium px-2 py-1 rounded-full",
-                    sortBy === 'coverage' ? [
-                      getCoverageColor(fileData.coveragePercentage),
-                      getCoverageBgColor(fileData.coveragePercentage)
-                    ] : "text-gray-700 bg-gray-100"
-                  )}>
-                    {sortBy === 'coverage' 
-                      ? formatPercentage(fileData.coveragePercentage)
-                      : getFileMetric(fileData, sortBy).toLocaleString()
-                    }
-                  </span>
-                </div>
-                <div className="ml-6 mt-1">
-                  <span className="text-xs text-gray-500">
-                    {sortBy === 'coverage' 
-                      ? `${fileData.coveredLines} / ${fileData.compiledLines} lines`
-                      : getMetricDescription(sortBy)
-                    }
+                  )}
+                  <span className="text-sm font-medium text-gray-700 truncate flex-1" title={filename}>
+                    {filename.split('/').pop() || filename}
                   </span>
                 </div>
               </button>
@@ -351,53 +423,47 @@ export function Sidebar({ data, selectedFile, selectedFunction, onFileSelect, on
                     : "hover:bg-gray-50"
                 )}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <Code2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <span className="text-sm font-medium text-gray-700 block truncate">
-                        {func.name}
+                <div className="flex items-center gap-2">
+                  <Code2 className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                  {sortBy === 'coverage' ? (
+                    <>
+                      <span className={cn(
+                        "text-xs font-medium px-1.5 py-0.5 rounded w-12 text-center",
+                        getCoverageColor(func.data.coveragePercentage),
+                        getCoverageBgColor(func.data.coveragePercentage)
+                      )}>
+                        {formatPercentage(func.data.coveragePercentage)}
                       </span>
-                      <span className="text-xs text-gray-500 block truncate" title={func.file}>
-                        {func.file.split('/').pop() || func.file}
+                      <span className="text-xs text-gray-500 w-16 text-center">
+                        {func.data.coveredLines?.length || 0}/{(func.data.coveredLines?.length || 0) + (func.data.uncoveredLines?.length || 0)}
                       </span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end flex-shrink-0">
-                    <span 
-                      className={cn(
-                        "text-xs font-medium px-2 py-0.5 rounded-full mb-0.5",
-                        sortBy === 'coverage' ? [
-                          getCoverageColor(func.data.coveragePercentage),
-                          getCoverageBgColor(func.data.coveragePercentage)
-                        ] : "text-gray-700 bg-gray-100"
-                      )}
-                      title={sortBy === 'coverage' 
-                        ? 'Coverage percentage'
-                        : `Self ${getMetricDescription(sortBy)}: ${(func.data.totals[sortBy] || 0).toLocaleString()}`
-                      }
-                    >
-                      {sortBy === 'coverage' 
-                        ? formatPercentage(func.data.coveragePercentage)
-                        : (func.data.totals[sortBy] || 0).toLocaleString()
-                      }
-                    </span>
-                    {sortBy !== 'coverage' && (
+                    </>
+                  ) : (
+                    <>
                       <span 
-                        className="text-xs font-medium px-2 py-0.5 rounded-full text-gray-600 bg-gray-50"
-                        title={`Inclusive ${getMetricDescription(sortBy)}: ${(func.inclusiveTotals[sortBy] || 0).toLocaleString()}`}
+                        className="text-xs font-medium text-gray-500 w-10 text-right"
+                        title={`Called ${func.callCount} time${func.callCount !== 1 ? 's' : ''}`}
+                      >
+                        {func.callCount > 0 ? func.callCount.toLocaleString() : '-'}
+                      </span>
+                      <span 
+                        className="text-xs font-medium text-gray-700 text-right"
+                        style={{ minWidth: '60px' }}
+                        title={`Inclusive ${getMetricDescription(sortBy)}`}
                       >
                         {(func.inclusiveTotals[sortBy] || 0).toLocaleString()}
                       </span>
-                    )}
-                  </div>
-                </div>
-                <div className="ml-6 mt-1">
-                  <span className="text-xs text-gray-500">
-                    {sortBy === 'coverage' 
-                      ? `${func.data.coveredLines?.length || 0} / ${(func.data.coveredLines?.length || 0) + (func.data.uncoveredLines?.length || 0)} lines`
-                      : getMetricDescription(sortBy)
-                    }
+                      <span 
+                        className="text-xs font-medium text-gray-600 text-right"
+                        style={{ minWidth: '60px' }}
+                        title={`Self ${getMetricDescription(sortBy)}`}
+                      >
+                        {(func.data.totals[sortBy] || 0).toLocaleString()}
+                      </span>
+                    </>
+                  )}
+                  <span className="text-sm font-medium text-gray-700 truncate flex-1" title={`${func.name} (${func.file})`}>
+                    {func.name}
                   </span>
                 </div>
               </button>

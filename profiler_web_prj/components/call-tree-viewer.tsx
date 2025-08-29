@@ -30,10 +30,30 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
   const [splitPosition, setSplitPosition] = useState(50); // Percentage for split view
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const scrollPositions = useRef<{ [key: string]: number | string | undefined }>({ tree: 0, caller: 0, callee: 0, previousMode: undefined });
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   
   // Initialize search engine and entry point matcher
   const searchEngine = useMemo(() => new CallTreeSearchEngine(), []);
   const entryPointMatcher = useMemo(() => new EntryPointMatcher(), []);
+
+  // Save scroll position when switching views
+  const handleViewModeChange = (newMode: 'tree' | 'caller' | 'callee') => {
+    // Save current scroll position
+    if (scrollContainerRef.current) {
+      scrollPositions.current[viewMode] = scrollContainerRef.current.scrollTop;
+    }
+    
+    // Change view mode
+    setViewMode(newMode);
+    
+    // Restore scroll position after DOM update
+    setTimeout(() => {
+      if (scrollContainerRef.current && scrollPositions.current[newMode] !== undefined) {
+        scrollContainerRef.current.scrollTop = scrollPositions.current[newMode];
+      }
+    }, 0);
+  };
   
   // Check if we have cycles data or need to use instructions
   const hasCycles = data.summaryTotals?.Cy !== undefined;
@@ -248,6 +268,70 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
       console.error('Error building search index:', error);
     }
   }, [nodeMap, searchEngine]);
+
+  // Scroll to selected function when switching to tree view
+  useEffect(() => {
+    if (selectedFunction && viewMode === 'tree') {
+      // Check if we just switched from another view
+      const previousMode = scrollPositions.current.previousMode;
+      const justSwitchedToTree = previousMode && previousMode !== 'tree';
+      
+      // Update previous mode
+      scrollPositions.current.previousMode = viewMode;
+      
+      // If we just switched from caller/callee to tree, scroll to selected function
+      if (justSwitchedToTree) {
+        // First check if the selected function exists in the tree
+        const targetNode = nodeMap.get(selectedFunction.id);
+        if (!targetNode) {
+          console.log('Selected function not found in tree:', selectedFunction.functionName);
+          return;
+        }
+        
+        // Expand nodes to make sure selected function is visible
+        const pathToNode = new Set<string>();
+        
+        // Find path from root to selected node
+        const findPath = (nodeId: string): boolean => {
+          const node = nodeMap.get(nodeId);
+          if (!node) return false;
+          
+          // Check all nodes to find parent
+          for (const [_, parentNode] of nodeMap) {
+            if (parentNode.children?.some(child => child.id === nodeId)) {
+              pathToNode.add(parentNode.id);
+              findPath(parentNode.id);
+              return true;
+            }
+          }
+          return false;
+        };
+        
+        findPath(selectedFunction.id);
+        
+        // Expand all nodes in the path
+        setExpandedNodes(prev => {
+          const newExpanded = new Set(prev);
+          pathToNode.forEach(id => newExpanded.add(id));
+          return newExpanded;
+        });
+        
+        // Scroll to the node after DOM update
+        setTimeout(() => {
+          const element = document.querySelector(`[data-node-id="${selectedFunction.id}"]`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Save this position
+            if (scrollContainerRef.current) {
+              setTimeout(() => {
+                scrollPositions.current.tree = scrollContainerRef.current!.scrollTop;
+              }, 500); // After smooth scroll completes
+            }
+          }
+        }, 150);
+      }
+    }
+  }, [viewMode, selectedFunction]); // Trigger when viewMode or selectedFunction changes
   
   // Build entry point index when node map changes
   useEffect(() => {
@@ -437,6 +521,8 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
     depth?: number; 
     maxDepth?: number 
   }) => {
+    const nodeRef = useRef<HTMLDivElement>(null);
+    
     if (depth > maxDepth) return null;
     
     // Check if this node or any of its descendants match the search
@@ -474,6 +560,7 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
           )}
           style={{ marginLeft: `${depth * 20}px` }}
           onClick={() => setSelectedFunction(node)}
+          data-node-id={node.id}
         >
           <div className="flex items-center flex-1">
             {hasChildren && (
@@ -583,8 +670,10 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
           </div>
         ) : (
           callers.map((caller, index) => (
-            <div key={`${caller.id}-${index}`} className="flex items-center p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 cursor-pointer"
-                 onClick={() => setSelectedFunction(caller)}>
+            <div key={`${caller.id}-${index}`} 
+                 className="flex items-center p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 cursor-pointer"
+                 onDoubleClick={() => setSelectedFunction(caller)}
+                 title="Double-click to focus on this function">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{caller.functionName}</span>
@@ -671,8 +760,10 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
           </div>
         ) : (
           callees.map((callee, index) => (
-            <div key={`${callee.id}-${index}`} className="flex items-center p-3 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100 cursor-pointer"
-                 onClick={() => setSelectedFunction(callee)}>
+            <div key={`${callee.id}-${index}`} 
+                 className="flex items-center p-3 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100 cursor-pointer"
+                 onDoubleClick={() => setSelectedFunction(callee)}
+                 title="Double-click to focus on this function">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{callee.functionName}</span>
@@ -811,7 +902,7 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
           <div className="flex gap-4">
             <div className="flex bg-white rounded-lg border">
               <button
-                onClick={() => setViewMode('tree')}
+                onClick={() => handleViewModeChange('tree')}
                 className={cn(
                   "px-4 py-2 text-sm rounded-l-lg",
                   viewMode === 'tree' ? 'bg-blue-500 text-white' : 'text-gray-700 hover:bg-gray-100'
@@ -820,7 +911,7 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
                 Tree View
               </button>
               <button
-                onClick={() => setViewMode('caller')}
+                onClick={() => handleViewModeChange('caller')}
                 className={cn(
                   "px-4 py-2 text-sm",
                   viewMode === 'caller' ? 'bg-blue-500 text-white' : 'text-gray-700 hover:bg-gray-100'
@@ -829,7 +920,7 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
                 Callers
               </button>
               <button
-                onClick={() => setViewMode('callee')}
+                onClick={() => handleViewModeChange('callee')}
                 className={cn(
                   "px-4 py-2 text-sm rounded-r-lg",
                   viewMode === 'callee' ? 'bg-blue-500 text-white' : 'text-gray-700 hover:bg-gray-100'
@@ -859,7 +950,7 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
             <div style={{ height: `${splitPosition}%` }} className="overflow-hidden">
               <div className="h-full grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
                 {/* Main View */}
-                <div className="lg:col-span-2 overflow-y-auto">
+                <div ref={scrollContainerRef} className="lg:col-span-2 overflow-y-auto">
                   {viewMode === 'tree' && (
                     <div>
                       <h3 className="text-lg font-semibold mb-4">Function Call Tree</h3>
@@ -952,7 +1043,7 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
         ) : (
           <div className="h-full grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
             {/* Main View */}
-            <div className="lg:col-span-2 overflow-y-auto">
+            <div ref={!showFlowChart ? scrollContainerRef : null} className="lg:col-span-2 overflow-y-auto">
               {viewMode === 'tree' && (
                 <div>
                   <h3 className="text-lg font-semibold mb-4">Function Call Tree</h3>
