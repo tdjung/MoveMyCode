@@ -172,7 +172,8 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
     // Build trees starting from root functions
     rootFunctionKeys.forEach(rootKey => {
       const rootTree = buildTreeFromNode(rootKey);
-      if (rootTree) {
+      // Filter out functions with 0 instructions/cycles
+      if (rootTree && rootTree.selfTime > 0) {
         rootNodes.push(rootTree);
       }
     });
@@ -189,9 +190,16 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
     rootNodes.forEach(root => addToNodeMap(root));
 
     // Calculate total cycles/instructions (including sub-calls) recursively
-    const calculateTotalCycles = (node: CallTreeNode): number => {
+    const calculateTotalCycles = (node: CallTreeNode, visited = new Set<string>()): number => {
       try {
         if (!node || typeof node !== 'object') return 0;
+        
+        // Check if we've already calculated this node to prevent infinite recursion
+        const nodeKey = `${node.fileName}:${node.functionName}`;
+        if (visited.has(nodeKey)) {
+          return node.selfTime || 0; // Return only self time to avoid double counting
+        }
+        visited.add(nodeKey);
         
         let totalCycles = node.selfTime || 0;
         
@@ -199,10 +207,9 @@ export function CallTreeViewer({ data, entryPoint: initialEntryPoint }: CallTree
         if (node.children && Array.isArray(node.children) && node.children.length > 0) {
           for (const child of node.children) {
             if (child && typeof child === 'object') {
-              // Use the call count to multiply child's total cycles
-              const childTotalCycles = calculateTotalCycles(child);
-              const callCount = child.callCount || 1;
-              totalCycles += childTotalCycles * callCount;
+              // Calculate child's total only once
+              const childTotalCycles = calculateTotalCycles(child, new Set(visited));
+              totalCycles += childTotalCycles;
             }
           }
         }

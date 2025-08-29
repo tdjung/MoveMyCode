@@ -189,12 +189,9 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
           nodesByParent.get(parentId)!.push(item);
         });
         
-        // Calculate initial X to center the entire level
-        const levelWidth = levelTotalWidths.get(level) || 0;
-        const centerOffset = (maxLevelWidth - levelWidth) / 2;
-        let currentX = NODE_GAP + centerOffset; // Start with margin plus centering offset
+        // Calculate positions for each parent group
+        const parentGroups: { parentId: string; nodes: typeof nodesToDisplay; startX: number; width: number }[] = [];
         
-        // Position nodes grouped by parent
         nodesByParent.forEach((siblingNodes, parentId) => {
           const parentPos = parentPositions.get(parentId);
           
@@ -210,21 +207,62 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
             }
           });
           
-          let startX: number;
+          let idealStartX: number;
           if (parentPos) {
             // Center children under parent
-            startX = parentPos.x + parentPos.width / 2 - groupWidth / 2;
-            // Ensure we don't go negative
-            startX = Math.max(NODE_GAP, startX);
+            idealStartX = parentPos.x + parentPos.width / 2 - groupWidth / 2;
           } else {
-            // No parent, use current X
-            startX = currentX;
+            // No parent, start from left
+            idealStartX = NODE_GAP;
           }
           
-          // Position each sibling
+          parentGroups.push({
+            parentId,
+            nodes: siblingNodes,
+            startX: idealStartX,
+            width: groupWidth
+          });
+        });
+        
+        // Sort groups by ideal start position
+        parentGroups.sort((a, b) => a.startX - b.startX);
+        
+        // Adjust positions to prevent overlaps
+        for (let i = 0; i < parentGroups.length; i++) {
+          const group = parentGroups[i];
+          
+          // Check overlap with previous groups
+          if (i > 0) {
+            const prevGroup = parentGroups[i - 1];
+            const prevEnd = prevGroup.startX + prevGroup.width + NODE_GAP;
+            if (group.startX < prevEnd) {
+              // Adjust position to avoid overlap
+              group.startX = prevEnd;
+            }
+          }
+          
+          // Ensure minimum margin from left
+          group.startX = Math.max(NODE_GAP, group.startX);
+        }
+        
+        // Calculate level width after adjustments
+        const adjustedLevelWidth = parentGroups.length > 0
+          ? parentGroups[parentGroups.length - 1].startX + parentGroups[parentGroups.length - 1].width - parentGroups[0].startX
+          : 0;
+        
+        // Center the entire level
+        const centerOffset = (maxLevelWidth - adjustedLevelWidth) / 2;
+        
+        // Position nodes within each group
+        parentGroups.forEach(group => {
+          const nodeWidths: number[] = [];
+          group.nodes.forEach(item => {
+            nodeWidths.push(calculateNodeWidth(item.node));
+          });
+          
           let xOffset = 0;
-          siblingNodes.forEach((item, index) => {
-            const x = startX + xOffset;
+          group.nodes.forEach((item, index) => {
+            const x = group.startX + xOffset + centerOffset;
             const y = (level - 1) * LEVEL_HEIGHT;
             const width = nodeWidths[index];
             
@@ -243,8 +281,6 @@ export function FlowChartView({ selectedNode, allNodes, onNodeSelect }: FlowChar
             
             xOffset += width + NODE_GAP;
           });
-          
-          currentX = Math.max(currentX, startX + groupWidth + NODE_GAP * 2);
         });
       });
       
